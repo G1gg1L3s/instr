@@ -3,37 +3,75 @@ use std::collections::BTreeSet;
 use iced_x86::{Decoder, Instruction, Mnemonic, OpKind, Register};
 use pe_parser::{pe::PortableExecutable, section::SectionHeader};
 
+#[derive(Clone, Copy)]
+struct Addr(u32);
+
+impl std::fmt::Debug for Addr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{:x}", self.0)
+    }
+}
+
+impl std::fmt::Display for Addr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{:x}", self.0)
+    }
+}
+
+impl std::ops::Add<Addr> for Addr {
+    type Output = Addr;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Addr(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Add<u32> for Addr {
+    type Output = Addr;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        Addr(self.0 + rhs)
+    }
+}
+
+impl std::ops::AddAssign<u32> for Addr {
+    fn add_assign(&mut self, rhs: u32) {
+        self.0 += rhs;
+    }
+}
+
 struct SectionData<'a> {
-    address: u64,
+    address: Addr,
     data: &'a [u8],
 }
 
 impl<'a> std::fmt::Debug for SectionData<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SectionData")
-            .field("address", &format_args!("0x{:x}", self.address))
+            .field("address", &self.address)
             .field("size", &format_args!("{:x}", self.data.len()))
             .finish()
     }
 }
 
 impl<'a> SectionData<'a> {
-    fn contains(&self, addr: impl Into<u64>) -> bool {
-        let range = self.address..(self.address + self.data.len() as u64);
-        range.contains(&addr.into())
+    fn contains(&self, addr: Addr) -> bool {
+        let start = self.address.0 as u64;
+        let range = start..(start + self.data.len() as u64);
+        range.contains(&(addr.0 as _))
     }
 
-    fn slice(&self, addr: usize, size: usize) -> &'a [u8] {
-        let index = addr - usize::try_from(self.address).unwrap();
+    fn slice(&self, addr: Addr, size: usize) -> &'a [u8] {
+        let index = usize::try_from(addr.0).unwrap() - usize::try_from(self.address.0).unwrap();
         &self.data[index..index + size]
     }
 
-    fn slice_cstr(&self, addr: usize) -> Option<&'a std::ffi::CStr> {
-        if !self.contains(addr as u64) {
+    fn slice_cstr(&self, addr: Addr) -> Option<&'a std::ffi::CStr> {
+        if !self.contains(addr) {
             return None;
         }
 
-        let index = addr - usize::try_from(self.address).unwrap();
+        let index = usize::try_from(addr.0).unwrap() - usize::try_from(self.address.0).unwrap();
         std::ffi::CStr::from_bytes_until_nul(&self.data[index..]).ok()
     }
 }
@@ -46,10 +84,10 @@ struct Sections<'a> {
 }
 
 impl<'a> Sections<'a> {
-    pub fn slice(&self, addr: u32, size: u32) -> Option<&'a [u8]> {
+    pub fn slice(&self, addr: Addr, size: u32) -> Option<&'a [u8]> {
         for section in self.sections() {
             if section.contains(addr) {
-                return Some(section.slice(addr as _, size as _));
+                return Some(section.slice(addr, size as _));
             }
         }
         None
@@ -59,20 +97,20 @@ impl<'a> Sections<'a> {
         [&self.text, &self.rdata, &self.data]
     }
 
-    pub fn slice_cstr(&self, addr: u32) -> Option<&'a std::ffi::CStr> {
+    pub fn slice_cstr(&self, addr: Addr) -> Option<&'a std::ffi::CStr> {
         for section in self.sections() {
-            if let Some(cstr) = section.slice_cstr(addr as _) {
+            if let Some(cstr) = section.slice_cstr(addr) {
                 return Some(cstr);
             }
         }
         None
     }
 
-    pub fn read_u32_le(&self, addr: u32) -> Option<u32> {
+    pub fn read_u32_le(&self, addr: Addr) -> Option<u32> {
         for section in self.sections() {
             if section.contains(addr) {
                 return Some(u32::from_le_bytes(
-                    section.slice(addr as _, 4).try_into().unwrap(),
+                    section.slice(addr, 4).try_into().unwrap(),
                 ));
             }
         }
@@ -96,7 +134,7 @@ fn get_section_bytes<'a>(
 
     let data = &pe_bytes[start..start + size];
     SectionData {
-        address: u64::from(image_base) + u64::from(section.virtual_address),
+        address: Addr(image_base + section.virtual_address),
         data,
     }
 }
@@ -138,7 +176,7 @@ fn parse_binary<'a>(pe_bytes: &'a [u8], pe: &PortableExecutable) -> Option<Binar
 #[repr(C)]
 #[derive(Debug)]
 struct ImageImportDescriptor {
-    addr: u32,
+    addr: Addr,
     original_first_thunk: u32,
     time_date_stamp: u32,
     forwarder_chain: u32,
@@ -146,7 +184,7 @@ struct ImageImportDescriptor {
     first_thunk: u32,
 }
 
-fn parse_image_import_descriptor(mut data: &[u8], mut addr: u32) -> Vec<ImageImportDescriptor> {
+fn parse_image_import_descriptor(mut data: &[u8], mut addr: Addr) -> Vec<ImageImportDescriptor> {
     let mut res = vec![];
     while data.len() >= 20 {
         let descriptor = ImageImportDescriptor {
@@ -166,56 +204,24 @@ fn parse_image_import_descriptor(mut data: &[u8], mut addr: u32) -> Vec<ImageImp
     res
 }
 
+#[derive(Debug)]
 struct ReadString {
-    address: u32,
+    address: Addr,
     value: String,
 }
 
-impl std::fmt::Debug for ReadString {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ReadString")
-            .field("address", &format_args!("0x{:x}", self.address))
-            .field("value", &self.value)
-            .finish()
-    }
-}
-
+#[derive(Debug)]
 struct ImportTableThunk {
     name: ReadString,
-    descriptor_addr: u32,
-    target_addr: u32,
+    descriptor_addr: Addr,
+    target_addr: Addr,
 }
 
-impl std::fmt::Debug for ImportTableThunk {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ImportTableThunk")
-            .field("name", &self.name)
-            .field(
-                "descriptor_addr",
-                &format_args!("0x{:x}", self.descriptor_addr),
-            )
-            .field("target_addr", &self.target_addr)
-            .finish()
-    }
-}
-
+#[derive(Debug)]
 struct ImportTableLib {
-    descriptor_addr: u32,
+    descriptor_addr: Addr,
     name: ReadString,
     thunks: Vec<ImportTableThunk>,
-}
-
-impl std::fmt::Debug for ImportTableLib {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ImportTableLib")
-            .field(
-                "descriptor_addr",
-                &format_args!("0x{:x}", self.descriptor_addr),
-            )
-            .field("name", &self.name)
-            .field("thunks", &self.thunks)
-            .finish()
-    }
 }
 
 fn parse_import_table(
@@ -224,7 +230,7 @@ fn parse_import_table(
 ) -> Option<Vec<ImportTableLib>> {
     let image_base = pe.optional_header_32?.image_base;
     let import_table = pe.optional_header_32?.data_directories.import_table;
-    let addr = image_base + import_table.virtual_address;
+    let addr = Addr(image_base + import_table.virtual_address);
 
     let table = sections
         .slice(addr as _, import_table.size as _)
@@ -236,7 +242,7 @@ fn parse_import_table(
             break;
         }
 
-        let libname_addr = image_base + descriptor.name;
+        let libname_addr = Addr(image_base + descriptor.name);
         let libname = sections
             .slice_cstr(libname_addr)
             .expect("failed to read import lib name")
@@ -244,8 +250,8 @@ fn parse_import_table(
             .expect("import lib name is not utf8")
             .to_string();
 
-        let mut original_first_thunk = descriptor.original_first_thunk + image_base;
-        let mut target_thunk = descriptor.first_thunk + image_base;
+        let mut original_first_thunk = Addr(descriptor.original_first_thunk + image_base);
+        let mut target_thunk = Addr(descriptor.first_thunk + image_base);
 
         let mut thunks = vec![];
         while let Some(ptr) = sections.read_u32_le(original_first_thunk) {
@@ -258,7 +264,7 @@ fn parse_import_table(
                 panic!("Unsupported is_ordinal");
             }
 
-            let ptr = (ptr & 0x7FFFFFFF) + image_base;
+            let ptr = Addr((ptr & 0x7FFFFFFF) + image_base);
             // +2 because structure looks like:
             // typedef struct {
             //     WORD Hint; // Unused
@@ -383,13 +389,13 @@ fn main() {
     let pe = pe_parser::pe::parse_portable_executable(&data).unwrap();
     let binary = parse_binary(&data, &pe).unwrap();
 
-    println!("Binary: {:?}", binary);
+    println!("Binary: {:#?}", binary);
     return;
 
     let mut decoder = Decoder::with_ip(
         32,
         binary.sections.text.data,
-        binary.sections.text.address,
+        binary.sections.text.address.0.into(),
         iced_x86::DecoderOptions::NONE,
     );
 
@@ -404,7 +410,7 @@ fn main() {
         if let Some(addr) = extract_call_address(&instr) {
             eprintln!(
                 ">> 0x{addr:x} (addr in .text: {})",
-                binary.sections.text.contains(addr)
+                binary.sections.text.contains(Addr(addr as _))
             );
         }
     }
