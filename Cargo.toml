@@ -1,0 +1,14 @@
+[package]
+name = "instr"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+hex = "0.4.3"
+pe-parser = "0.7.0"
+
+[dependencies.iced-x86]
+version = "1.21.0"
+default-features = false
+features = ["std", "decoder", "intel"]
