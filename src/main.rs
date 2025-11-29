@@ -489,12 +489,12 @@ fn collect_rdata_objects(sections: &Sections<'_>) -> Vec<RDataObject> {
 
         let u32 = data[..4].try_into().unwrap();
         let u32 = u32::from_le_bytes(u32);
+        let as_addr = Addr(u32);
 
-        let kind = match sections.image_base.checked_add(u32).map(Addr) {
-            Some(addr) if sections.rdata.contains(addr) => RDataObjectKind::RdataRef(addr),
-            Some(addr) if sections.data.contains(addr) => RDataObjectKind::DataRef(addr),
-            // interestingly, functions use virtual address, not RVA
-            _ if sections.text.contains(Addr(u32)) => RDataObjectKind::FunctionsRef(Addr(u32)),
+        let kind = match as_addr {
+            addr if sections.rdata.contains(addr) => RDataObjectKind::RdataRef(addr),
+            addr if sections.data.contains(addr) => RDataObjectKind::DataRef(addr),
+            addr if sections.text.contains(addr) => RDataObjectKind::FunctionsRef(addr),
             _ => RDataObjectKind::Const(u32),
         };
 
@@ -515,6 +515,9 @@ fn main() {
     println!("Binary: {:#?}", binary);
 
     let robjects = collect_rdata_objects(&binary.sections);
+    for obj in robjects {
+        println!(">> {:?}", obj);
+    }
 
     return;
 
