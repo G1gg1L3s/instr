@@ -37,7 +37,13 @@ fn main() {
                 internal
             );
         } else {
-            eprintln!("0x{:x} {: <30} | {}", instr.ip(), instrformat, sig);
+            eprintln!(
+                "0x{:x} {: <30} | {} ({:?})",
+                instr.ip(),
+                instrformat,
+                sig,
+                instr.mnemonic()
+            );
         }
 
         variants.insert(sig);
