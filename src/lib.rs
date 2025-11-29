@@ -1,5 +1,6 @@
 pub mod addr;
 pub mod cfg;
+pub mod ins;
 
 use iced_x86::{Instruction, Mnemonic, OpKind, Register};
 use pe_parser::{pe::PortableExecutable, section::SectionHeader};
@@ -28,8 +29,12 @@ impl<'a> SectionData<'a> {
     }
 
     pub fn slice(&self, addr: Addr, size: usize) -> &'a [u8] {
-        let index = usize::try_from(addr.0).unwrap() - usize::try_from(self.address.0).unwrap();
+        let index = self.index(addr);
         &self.data[index..index + size]
+    }
+
+    fn index(&self, addr: Addr) -> usize {
+        usize::try_from(addr.0).unwrap() - usize::try_from(self.address.0).unwrap()
     }
 
     pub fn slice_cstr(&self, addr: Addr) -> Option<&'a std::ffi::CStr> {
@@ -37,8 +42,17 @@ impl<'a> SectionData<'a> {
             return None;
         }
 
-        let index = usize::try_from(addr.0).unwrap() - usize::try_from(self.address.0).unwrap();
+        let index = self.index(addr);
         std::ffi::CStr::from_bytes_until_nul(&self.data[index..]).ok()
+    }
+
+    pub fn slice_to_end(&self, addr: Addr) -> &'a [u8] {
+        if self.contains(addr) {
+            return b"";
+        }
+
+        let index = self.index(addr);
+        &self.data[index..]
     }
 
     pub fn len(&self) -> usize {
@@ -95,8 +109,10 @@ impl<'a> Sections<'a> {
 
 #[derive(Debug)]
 pub struct Binary<'a> {
+    pub entry_point: Addr,
     pub sections: Sections<'a>,
     pub imports: Vec<ImportTableLib>,
+    pub robjects: Vec<RDataObject>,
 }
 
 pub fn get_section_bytes<'a>(
@@ -143,10 +159,19 @@ pub fn parse_sections<'a>(pe_bytes: &'a [u8], pe: &PortableExecutable) -> Option
 }
 
 pub fn parse_binary<'a>(pe_bytes: &'a [u8], pe: &PortableExecutable) -> Option<Binary<'a>> {
+    let header = pe.optional_header_32.unwrap();
+
+    let entry_point = Addr(header.image_base + header.address_of_entry_point);
     let sections = parse_sections(pe_bytes, pe)?;
     let imports = parse_import_table(&sections, pe)?;
+    let robjects = collect_rdata_objects(&sections);
 
-    Some(Binary { sections, imports })
+    Some(Binary {
+        entry_point,
+        sections,
+        imports,
+        robjects,
+    })
 }
 
 #[repr(C)]
@@ -297,7 +322,7 @@ pub fn operand_signature(instr: &Instruction, index: u32) -> String {
         | OpKind::Immediate8to16
         | OpKind::Immediate8to32
         | OpKind::Immediate8to64
-        | OpKind::Immediate32to64 => "IMM".to_string(),
+        | OpKind::Immediate32to64 => format!("{:?}", kind),
 
         OpKind::Memory => {
             let base = instr.memory_base();
@@ -355,6 +380,18 @@ pub fn extract_call_address(instr: &Instruction) -> Option<u64> {
                 // Could also handle if you want actual target addresses
                 let imm = instr.immediate(0);
                 Some(imm)
+            }
+
+            OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64 => {
+                Some(instr.near_branch_target()) // already absolute
+            }
+
+            OpKind::FarBranch16 => {
+                Some(instr.far_branch16().into()) // absolute, but includes selector logic
+            }
+
+            OpKind::FarBranch32 => {
+                Some(instr.far_branch32().into()) // absolute, but includes selector logic
             }
             _ => None,
         }

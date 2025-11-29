@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use iced_x86::Decoder;
 use instr::{
-    addr::Addr, collect_rdata_objects, extract_call_address, instruction_signature, parse_binary,
+    addr::Addr, extract_call_address, ins::parse_instruction, instruction_signature, parse_binary,
 };
 
 fn main() {
@@ -10,12 +10,10 @@ fn main() {
     let pe = pe_parser::pe::parse_portable_executable(&data).unwrap();
     let binary = parse_binary(&data, &pe).unwrap();
 
-    println!("Binary: {:#?}", binary);
-
-    let robjects = collect_rdata_objects(&binary.sections);
-    for obj in robjects {
-        println!(">> {:?}", obj);
-    }
+    println!(
+        "Binary: entry: {} {:#?}",
+        binary.entry_point, binary.sections
+    );
 
     let mut decoder = Decoder::with_ip(
         32,
@@ -29,7 +27,19 @@ fn main() {
     for instr in &mut decoder {
         let sig = instruction_signature(&instr);
         let instrformat = instr.to_string();
-        eprintln!("0x{:x} {: <30} | {}", instr.ip(), instrformat, sig);
+        let internal = parse_instruction(&instr);
+        if let Some(internal) = internal {
+            eprintln!(
+                "0x{:x} {: <30} | {} | {:?}",
+                instr.ip(),
+                instrformat,
+                sig,
+                internal
+            );
+        } else {
+            eprintln!("0x{:x} {: <30} | {}", instr.ip(), instrformat, sig);
+        }
+
         variants.insert(sig);
 
         if let Some(addr) = extract_call_address(&instr) {
