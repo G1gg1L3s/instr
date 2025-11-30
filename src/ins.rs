@@ -194,18 +194,11 @@ fn parse_push(instr: &iced_x86::Instruction) -> Option<Instruction> {
 }
 
 fn parse_mov(instr: &iced_x86::Instruction) -> Option<Instruction> {
-    // src must be immediate (any immediate form allowed)
     match instr.op1_kind() {
-        OpKind::Immediate8
-        | OpKind::Immediate16
-        | OpKind::Immediate32
-        | OpKind::Immediate64
-        | OpKind::Immediate8to16
-        | OpKind::Immediate8to32
-        | OpKind::Immediate8to64 => {
-            let imm = instr.immediate64();
-            Some(Instruction::MovImm(imm))
-        }
+        OpKind::Immediate8 => Some(Instruction::MovImm(instr.immediate8().into())),
+        OpKind::Immediate16 => Some(Instruction::MovImm(instr.immediate16().into())),
+        OpKind::Immediate32 => Some(Instruction::MovImm(instr.immediate32().into())),
+        OpKind::Immediate64 => Some(Instruction::MovImm(instr.immediate64())),
         _ => None,
     }
 }

@@ -56,7 +56,7 @@ fn main() {
         count.jump_table
     );
 
-    let mut last_addr_end = None;
+    let mut last_addr_end = Option::<Addr>::None;
 
     for (addr, block) in blocks {
         let Some(size) = block.size else {
@@ -64,13 +64,14 @@ fn main() {
             continue;
         };
 
-        if let Some(skipped) = last_addr_end.map(|last: Addr| addr.0.checked_sub(last.0))
-            && skipped != Some(0)
-        {
-            if let Some(skipped) = skipped {
-                println!("... Skipped 0x{:x} ({}) bytes ...", skipped, skipped);
-            } else {
-                println!("... OVERLAP");
+        if let Some(last_addr_end) = last_addr_end {
+            match addr.0.checked_sub(last_addr_end.0) {
+                Some(0) => {} // OK
+                Some(skipped) => {
+                    println!("_skipped {} bytes:", skipped);
+                    print_asm(&binary, last_addr_end, skipped.try_into().unwrap());
+                }
+                _ => println!("... OVERLAP"),
             }
         }
 
@@ -88,9 +89,6 @@ fn main() {
             continue;
         }
 
-        let code = binary.sections.text.slice(addr, size);
-        let decoder = Decoder::with_ip(32, code, addr.0.into(), iced_x86::DecoderOptions::NONE);
-
         match block.typ {
             instr::cfg::BlockType::Entry => println!("_start ({size}):"),
             instr::cfg::BlockType::Function => println!("_func_{:x} ({size}):", addr.0),
@@ -99,28 +97,7 @@ fn main() {
             instr::cfg::BlockType::JumpTable => println!("_jump_table_{:x} ({size}):", addr.0),
         }
 
-        for ins in decoder {
-            let sig = instruction_signature(&ins);
-            let instrformat = ins.to_string();
-            let internal = parse_instruction(&ins);
-            if let Some(internal) = internal {
-                println!(
-                    "    0x{:x} {: <30} | {} | {:?}",
-                    ins.ip(),
-                    instrformat,
-                    sig,
-                    internal
-                );
-            } else {
-                println!(
-                    "    0x{:x} {: <30} | {} ({:?})",
-                    ins.ip(),
-                    instrformat,
-                    sig,
-                    ins.mnemonic()
-                );
-            }
-        }
+        print_asm(&binary, addr, size);
     }
 
     println!(".rdata:");
@@ -131,5 +108,33 @@ fn main() {
     println!(".data:");
     for obj in &binary.data_objects {
         println!("  - {:?}", obj);
+    }
+}
+
+fn print_asm(binary: &instr::Binary<'_>, addr: Addr, size: usize) {
+    let code = binary.sections.text.slice(addr, size);
+    let decoder = Decoder::with_ip(32, code, addr.0.into(), iced_x86::DecoderOptions::NONE);
+
+    for ins in decoder {
+        let sig = instruction_signature(&ins);
+        let instrformat = ins.to_string();
+        let internal = parse_instruction(&ins);
+        if let Some(internal) = internal {
+            println!(
+                "    0x{:x} {: <30} | {} | {:?}",
+                ins.ip(),
+                instrformat,
+                sig,
+                internal
+            );
+        } else {
+            println!(
+                "    0x{:x} {: <30} | {} ({:?})",
+                ins.ip(),
+                instrformat,
+                sig,
+                ins.mnemonic()
+            );
+        }
     }
 }
