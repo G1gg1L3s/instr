@@ -63,6 +63,7 @@ pub enum Instruction {
     JumpReg(),
     // TODO: condition type
     Loop(Addr),
+    PushImm(u32),
 }
 
 #[derive(Debug)]
@@ -165,6 +166,24 @@ fn parse_jump(instr: &iced_x86::Instruction) -> Option<Instruction> {
     }
 }
 
+fn parse_push(instr: &iced_x86::Instruction) -> Option<Instruction> {
+    // push imm
+    match instr.op_kind(0) {
+        OpKind::Immediate8
+        | OpKind::Immediate16
+        | OpKind::Immediate32
+        | OpKind::Immediate8to16
+        | OpKind::Immediate8to32 => {
+            let imm = instr.immediate32();
+            return Some(Instruction::PushImm(imm));
+        }
+
+        _ => {}
+    }
+
+    None
+}
+
 pub fn parse_instruction(instr: &iced_x86::Instruction) -> Option<Instruction> {
     match instr.mnemonic() {
         Mnemonic::Call => parse_call(instr),
@@ -192,6 +211,7 @@ pub fn parse_instruction(instr: &iced_x86::Instruction) -> Option<Instruction> {
         | Mnemonic::Loop
         | Mnemonic::Loope
         | Mnemonic::Loopne => parse_jump(instr),
+        Mnemonic::Push => parse_push(instr),
         _ => None,
     }
 }

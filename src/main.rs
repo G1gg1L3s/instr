@@ -50,6 +50,7 @@ fn main() {
             instr::cfg::BlockType::Entry => println!("_start: ({size}):"),
             instr::cfg::BlockType::Function => println!("_func_{:x} ({size}):", addr.0),
             instr::cfg::BlockType::Jump => println!("_block_{:x} ({size}):", addr.0),
+            instr::cfg::BlockType::Indirect => println!("_indirect_{:x} ({size}):", addr.0),
         }
 
         for ins in decoder {
@@ -74,5 +75,15 @@ fn main() {
                 );
             }
         }
+    }
+
+    println!(".rdata:");
+    for obj in &binary.rdata_objects {
+        println!("  - {:?}", obj);
+    }
+
+    println!(".data:");
+    for obj in &binary.data_objects {
+        println!("  - {:?}", obj);
     }
 }

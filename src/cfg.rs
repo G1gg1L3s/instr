@@ -1,12 +1,13 @@
 use std::{collections::BTreeMap, ops::Range};
 
-use crate::{Binary, DataObject, DataObjectKind, addr::Addr, ins};
+use crate::{Binary, DataObject, DataObjectKind, SectionData, addr::Addr, ins};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockType {
     Entry,
     Function,
     Jump,
+    Indirect,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -36,7 +37,7 @@ pub fn derive_blocks(binary: &Binary<'_>) -> BTreeMap<Addr, Block> {
 
         let size = if binary.sections.text.contains(addr) {
             let code = binary.sections.text.slice_to_end(addr);
-            let size = derive_blocks_from_function(code, addr, &mut to_process);
+            let size = derive_blocks_from_function(code, addr, &binary, &mut to_process);
             Some(size)
         } else {
             None
@@ -124,6 +125,7 @@ fn normalise(mut blocks: BTreeMap<Addr, Block>) -> BTreeMap<Addr, Block> {
 pub fn derive_blocks_from_function(
     code: &[u8],
     addr: Addr,
+    binary: &Binary<'_>,
     to_process: &mut Vec<(Addr, BlockType)>,
 ) -> usize {
     let mut decoder = ins::Decoder::new(code, addr);
@@ -162,6 +164,11 @@ pub fn derive_blocks_from_function(
                 to_process.push((addr, BlockType::Jump));
                 to_process.push((decoder.address(), BlockType::Jump));
                 return decoder.position();
+            }
+            ins::Instruction::PushImm(imm) => {
+                if binary.sections.text.contains(Addr(imm)) {
+                    to_process.push((Addr(imm), BlockType::Indirect));
+                }
             }
         }
     }
