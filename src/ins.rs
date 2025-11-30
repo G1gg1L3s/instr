@@ -64,6 +64,7 @@ pub enum Instruction {
     // TODO: condition type
     Loop(Addr),
     PushImm(u32),
+    MovImm(u64),
 }
 
 #[derive(Debug)]
@@ -184,6 +185,23 @@ fn parse_push(instr: &iced_x86::Instruction) -> Option<Instruction> {
     None
 }
 
+fn parse_mov(instr: &iced_x86::Instruction) -> Option<Instruction> {
+    // src must be immediate (any immediate form allowed)
+    match instr.op1_kind() {
+        OpKind::Immediate8
+        | OpKind::Immediate16
+        | OpKind::Immediate32
+        | OpKind::Immediate64
+        | OpKind::Immediate8to16
+        | OpKind::Immediate8to32
+        | OpKind::Immediate8to64 => {
+            let imm = instr.immediate64();
+            Some(Instruction::MovImm(imm))
+        }
+        _ => None,
+    }
+}
+
 pub fn parse_instruction(instr: &iced_x86::Instruction) -> Option<Instruction> {
     match instr.mnemonic() {
         Mnemonic::Call => parse_call(instr),
@@ -212,6 +230,7 @@ pub fn parse_instruction(instr: &iced_x86::Instruction) -> Option<Instruction> {
         | Mnemonic::Loope
         | Mnemonic::Loopne => parse_jump(instr),
         Mnemonic::Push => parse_push(instr),
+        Mnemonic::Mov => parse_mov(instr),
         _ => None,
     }
 }

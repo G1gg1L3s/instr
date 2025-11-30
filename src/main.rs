@@ -1,7 +1,36 @@
+use std::collections::BTreeMap;
+
 use iced_x86::Decoder;
 use instr::{
-    addr::Addr, cfg::BlockType, ins::parse_instruction, instruction_signature, parse_binary,
+    addr::Addr,
+    cfg::{Block, BlockType},
+    ins::parse_instruction,
+    instruction_signature, parse_binary,
 };
+
+struct CountBlocks {
+    funcs: usize,
+    jumps: usize,
+    indirect: usize,
+}
+
+fn count_blocks<'a>(iter: impl Iterator<Item = &'a Block>) -> CountBlocks {
+    let mut funcs = 0;
+    let mut jumps = 0;
+    let mut indirect = 0;
+    for block in iter {
+        match block.typ {
+            BlockType::Entry | BlockType::Function => funcs += 1,
+            BlockType::Jump => jumps += 1,
+            BlockType::Indirect => indirect += 1,
+        }
+    }
+    CountBlocks {
+        funcs,
+        jumps,
+        indirect,
+    }
+}
 
 fn main() {
     let data = std::fs::read("../../Barnyard/Barnyard.exe").unwrap();
@@ -14,13 +43,14 @@ fn main() {
     );
 
     let blocks = instr::cfg::derive_blocks(&binary);
+    let count = count_blocks(blocks.values());
+
     println!(
-        "Total {} blocks ({} funcs)",
+        "Total {} blocks ({} funcs, {} jumps, {} indirect)",
         blocks.len(),
-        blocks
-            .iter()
-            .filter(|(_, block)| matches!(block.typ, BlockType::Function | BlockType::Entry))
-            .count()
+        count.funcs,
+        count.jumps,
+        count.indirect
     );
 
     let mut last_addr_end = None;

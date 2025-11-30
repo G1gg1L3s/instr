@@ -170,6 +170,14 @@ pub fn derive_blocks_from_function(
                     to_process.push((Addr(imm), BlockType::Indirect));
                 }
             }
+            ins::Instruction::MovImm(imm) => {
+                if let Ok(imm) = imm.try_into() {
+                    let addr = Addr(imm);
+                    if binary.sections.text.contains(addr) {
+                        to_process.push((addr, BlockType::Indirect));
+                    }
+                }
+            }
         }
     }
     decoder.position()
