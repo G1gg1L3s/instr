@@ -27,14 +27,18 @@ fn main() {
 
     for (addr, block) in blocks {
         let Some(size) = block.size else {
-            eprintln!("!! {} not in text", addr);
+            println!("!! {} not in text", addr);
             continue;
         };
 
-        if let Some(skipped) = last_addr_end.map(|last: Addr| addr.0 - last.0)
-            && skipped != 0
+        if let Some(skipped) = last_addr_end.map(|last: Addr| addr.0.checked_sub(last.0))
+            && skipped != Some(0)
         {
-            eprintln!("... Skipped 0x{:x} ({}) bytes ...", skipped, skipped);
+            if let Some(skipped) = skipped {
+                println!("... Skipped 0x{:x} ({}) bytes ...", skipped, skipped);
+            } else {
+                println!("... OVERLAP");
+            }
         }
 
         last_addr_end = Some(addr + size as u32);
@@ -43,9 +47,9 @@ fn main() {
         let decoder = Decoder::with_ip(32, code, addr.0.into(), iced_x86::DecoderOptions::NONE);
 
         match block.typ {
-            instr::cfg::BlockType::Entry => eprintln!("_start: ({size}):"),
-            instr::cfg::BlockType::Function => eprintln!("_func_{:x} ({size}):", addr.0),
-            instr::cfg::BlockType::Jump => eprintln!("_block_{:x} ({size}):", addr.0),
+            instr::cfg::BlockType::Entry => println!("_start: ({size}):"),
+            instr::cfg::BlockType::Function => println!("_func_{:x} ({size}):", addr.0),
+            instr::cfg::BlockType::Jump => println!("_block_{:x} ({size}):", addr.0),
         }
 
         for ins in decoder {
@@ -53,7 +57,7 @@ fn main() {
             let instrformat = ins.to_string();
             let internal = parse_instruction(&ins);
             if let Some(internal) = internal {
-                eprintln!(
+                println!(
                     "    0x{:x} {: <30} | {} | {:?}",
                     ins.ip(),
                     instrformat,
@@ -61,7 +65,7 @@ fn main() {
                     internal
                 );
             } else {
-                eprintln!(
+                println!(
                     "    0x{:x} {: <30} | {} ({:?})",
                     ins.ip(),
                     instrformat,

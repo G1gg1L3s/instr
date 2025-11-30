@@ -7,6 +7,7 @@ use pe_parser::{pe::PortableExecutable, section::SectionHeader};
 
 use crate::addr::Addr;
 
+#[derive(Clone, Copy)]
 pub struct SectionData<'a> {
     pub address: Addr,
     pub data: &'a [u8],
@@ -108,7 +109,8 @@ pub struct Binary<'a> {
     pub entry_point: Addr,
     pub sections: Sections<'a>,
     pub imports: Vec<ImportTableLib>,
-    pub robjects: Vec<RDataObject>,
+    pub rdata_objects: Vec<DataObject>,
+    pub data_objects: Vec<DataObject>,
 }
 
 pub fn get_section_bytes<'a>(
@@ -160,13 +162,15 @@ pub fn parse_binary<'a>(pe_bytes: &'a [u8], pe: &PortableExecutable) -> Option<B
     let entry_point = Addr(header.image_base + header.address_of_entry_point);
     let sections = parse_sections(pe_bytes, pe)?;
     let imports = parse_import_table(&sections, pe)?;
-    let robjects = collect_rdata_objects(&sections);
+    let rdata_objects = collect_data_objects(&sections, sections.rdata);
+    let data_objects = collect_data_objects(&sections, sections.data);
 
     Some(Binary {
         entry_point,
         sections,
         imports,
-        robjects,
+        rdata_objects,
+        data_objects,
     })
 }
 
@@ -397,7 +401,7 @@ pub fn extract_call_address(instr: &Instruction) -> Option<u64> {
 }
 
 #[derive(Debug)]
-pub enum RDataObjectKind {
+pub enum DataObjectKind {
     Utf8String(String),
     Utf16String(String),
     FunctionsRef(Addr),
@@ -407,9 +411,9 @@ pub enum RDataObjectKind {
 }
 
 #[derive(Debug)]
-pub struct RDataObject {
+pub struct DataObject {
     pub addr: Addr,
-    pub kind: RDataObjectKind,
+    pub kind: DataObjectKind,
 }
 
 fn read_ascii_string(data: &[u8]) -> Option<(String, usize)> {
@@ -461,17 +465,17 @@ fn read_utf16_string(data: &[u8]) -> Option<(String, usize)> {
     None
 }
 
-pub fn collect_rdata_objects(sections: &Sections<'_>) -> Vec<RDataObject> {
+pub fn collect_data_objects(sections: &Sections<'_>, section: SectionData<'_>) -> Vec<DataObject> {
     let mut res = Vec::with_capacity(sections.rdata.len() / 4);
 
-    let mut addr = sections.rdata.address;
-    let mut data = sections.rdata.data;
+    let mut addr = section.address;
+    let mut data = section.data;
 
     while !data.is_empty() {
         if let Some((s, size)) = read_ascii_string(data) {
-            res.push(RDataObject {
+            res.push(DataObject {
                 addr,
-                kind: RDataObjectKind::Utf8String(s),
+                kind: DataObjectKind::Utf8String(s),
             });
             // It seems like string have padding after them
             let size = size.next_multiple_of(4).min(data.len());
@@ -482,9 +486,9 @@ pub fn collect_rdata_objects(sections: &Sections<'_>) -> Vec<RDataObject> {
 
         // 2. UTF-16 string?
         if let Some((s, size)) = read_utf16_string(data) {
-            res.push(RDataObject {
+            res.push(DataObject {
                 addr,
-                kind: RDataObjectKind::Utf16String(s),
+                kind: DataObjectKind::Utf16String(s),
             });
 
             let size = size.next_multiple_of(4).min(data.len());
@@ -498,13 +502,13 @@ pub fn collect_rdata_objects(sections: &Sections<'_>) -> Vec<RDataObject> {
         let as_addr = Addr(u32);
 
         let kind = match as_addr {
-            addr if sections.rdata.contains(addr) => RDataObjectKind::RdataRef(addr),
-            addr if sections.data.contains(addr) => RDataObjectKind::DataRef(addr),
-            addr if sections.text.contains(addr) => RDataObjectKind::FunctionsRef(addr),
-            _ => RDataObjectKind::Const(u32),
+            addr if sections.rdata.contains(addr) => DataObjectKind::RdataRef(addr),
+            addr if sections.data.contains(addr) => DataObjectKind::DataRef(addr),
+            addr if sections.text.contains(addr) => DataObjectKind::FunctionsRef(addr),
+            _ => DataObjectKind::Const(u32),
         };
 
-        res.push(RDataObject { addr, kind });
+        res.push(DataObject { addr, kind });
 
         data = &data[4..];
         addr += 4;

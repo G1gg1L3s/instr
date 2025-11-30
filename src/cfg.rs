@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, ops::Range};
 
-use crate::{Binary, RDataObject, RDataObjectKind, addr::Addr, ins};
+use crate::{Binary, DataObject, DataObjectKind, addr::Addr, ins};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockType {
@@ -22,7 +22,9 @@ impl Block {
 }
 
 pub fn derive_blocks(binary: &Binary<'_>) -> BTreeMap<Addr, Block> {
-    let mut to_process = derive_functions_from_rdata(&binary.robjects);
+    let mut to_process = Vec::with_capacity(64_000);
+    derive_functions_from_data_objects(&binary.rdata_objects, &mut to_process);
+    derive_functions_from_data_objects(&binary.data_objects, &mut to_process);
     to_process.push((binary.entry_point, BlockType::Entry));
 
     let mut processed = BTreeMap::<Addr, Block>::new();
@@ -166,12 +168,13 @@ pub fn derive_blocks_from_function(
     decoder.position()
 }
 
-pub fn derive_functions_from_rdata(robjects: &[RDataObject]) -> Vec<(Addr, BlockType)> {
-    let mut result = Vec::with_capacity(robjects.len() / 4);
+pub fn derive_functions_from_data_objects(
+    robjects: &[DataObject],
+    result: &mut Vec<(Addr, BlockType)>,
+) {
     for obj in robjects {
-        if let RDataObjectKind::FunctionsRef(addr) = &obj.kind {
+        if let DataObjectKind::FunctionsRef(addr) = &obj.kind {
             result.push((*addr, BlockType::Function));
         }
     }
-    result
 }
