@@ -316,15 +316,15 @@ pub fn operand_signature(instr: &Instruction, index: u32) -> String {
     match kind {
         OpKind::Register => "REG".to_string(),
 
-        OpKind::Immediate8
-        | OpKind::Immediate16
-        | OpKind::Immediate32
-        | OpKind::Immediate64
-        | OpKind::Immediate8_2nd
-        | OpKind::Immediate8to16
-        | OpKind::Immediate8to32
-        | OpKind::Immediate8to64
-        | OpKind::Immediate32to64 => format!("{:?}", kind),
+        OpKind::Immediate8 => format!("{:?}({})", kind, instr.immediate8()),
+        OpKind::Immediate16 => format!("{:?}({})", kind, instr.immediate16()),
+        OpKind::Immediate32 => format!("{:?}({})", kind, instr.immediate32()),
+        OpKind::Immediate64 => format!("{:?}({})", kind, instr.immediate64()),
+        OpKind::Immediate8_2nd => format!("{:?}({})", kind, instr.immediate8_2nd()),
+        OpKind::Immediate8to16 => format!("{:?}({})", kind, instr.immediate8to16()),
+        OpKind::Immediate8to32 => format!("{:?}({})", kind, instr.immediate8to32()),
+        OpKind::Immediate8to64 => format!("{:?}({})", kind, instr.immediate8to64()),
+        OpKind::Immediate32to64 => format!("{:?}({})", kind, instr.immediate32to64()),
 
         OpKind::Memory => {
             let base = instr.memory_base();

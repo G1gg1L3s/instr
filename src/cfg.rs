@@ -195,7 +195,7 @@ fn derive_blocks_from_function(
             }
             ins::Instruction::PushImm(imm) => {
                 if binary.sections.text.contains(Addr(imm)) {
-                    to_process.push((Addr(imm), ToProcessType::Code(BlockType::Jump)));
+                    to_process.push((Addr(imm), ToProcessType::Code(BlockType::Indirect)));
                 }
             }
             ins::Instruction::MovImm(imm) => {
