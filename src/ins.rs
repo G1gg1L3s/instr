@@ -51,16 +51,27 @@ pub enum Condition {
 }
 
 #[derive(Debug)]
+pub struct Mem {
+    pub is_base: bool,
+    pub is_index: bool,
+    pub disp: u32,
+    pub scale: u32,
+}
+
+#[derive(Debug)]
+pub enum Op {
+    Addr(Addr),
+    Mem(Mem),
+}
+
+#[derive(Debug)]
 pub enum Instruction {
     CallNear(Addr),
+    // TODO: use op
     CallMem(Addr),
     Return(u16),
-    JumpNear(Addr),
-    JumpMem(Addr),
-    JumpConditionalNear(Addr, Condition),
-    JumpConditionalMem(Addr, Condition),
-    JumpTable(),
-    JumpReg(),
+    Jump(Op),
+    JumpConditional(Op, Condition),
     // TODO: condition type
     Loop(Addr),
     PushImm(u32),
@@ -135,35 +146,32 @@ fn jump_condition(mn: Mnemonic) -> Option<Condition> {
 }
 
 fn parse_jump(instr: &iced_x86::Instruction) -> Option<Instruction> {
-    let target = match instr.op_kind(0) {
+    let op = match instr.op_kind(0) {
         OpKind::Memory => {
-            let base = instr.memory_base();
-            let index = instr.memory_index();
+            let is_base = instr.memory_base() != Register::None;
+            let is_index = instr.memory_index() != Register::None;
             let disp = instr.memory_displacement32();
-            if base == Register::None && index == Register::None {
-                Some(Addr(disp))
-            } else if instr.mnemonic() == Mnemonic::Jmp {
-                return Some(Instruction::JumpTable());
-            } else {
-                None
-            }
+            let scale = instr.memory_index_scale();
+            Op::Mem(Mem {
+                is_base,
+                is_index,
+                disp,
+                scale,
+            })
         }
         OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64 => {
-            Some(Addr(instr.near_branch_target().try_into().unwrap()))
+            Op::Addr(Addr(instr.near_branch_target().try_into().unwrap()))
         }
 
-        OpKind::Register if instr.mnemonic() == Mnemonic::Jmp => {
-            return Some(Instruction::JumpReg());
-        }
-
-        _ => None,
-    }?;
+        _ => return None,
+    };
 
     match instr.mnemonic() {
-        Mnemonic::Jmp => Some(Instruction::JumpNear(target)),
-        Mnemonic::Loop | Mnemonic::Loope | Mnemonic::Loopne => Some(Instruction::Loop(target)),
-        _ => jump_condition(instr.mnemonic())
-            .map(|cond| Instruction::JumpConditionalNear(target, cond)),
+        Mnemonic::Loop | Mnemonic::Loope | Mnemonic::Loopne => Some(Instruction::Loop(Addr(
+            instr.near_branch_target().try_into().unwrap(),
+        ))),
+        Mnemonic::Jmp => Some(Instruction::Jump(op)),
+        _ => jump_condition(instr.mnemonic()).map(|cond| Instruction::JumpConditional(op, cond)),
     }
 }
 

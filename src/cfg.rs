@@ -1,6 +1,10 @@
 use std::{collections::BTreeMap, ops::Range};
 
-use crate::{Binary, DataObject, DataObjectKind, SectionData, addr::Addr, ins};
+use crate::{
+    Binary, DataObject, DataObjectKind,
+    addr::Addr,
+    ins::{self, Mem, Op},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockType {
@@ -8,6 +12,12 @@ pub enum BlockType {
     Function,
     Jump,
     Indirect,
+    JumpTable,
+}
+
+enum ToProcessType {
+    Code(BlockType),
+    JumpTable,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -26,7 +36,7 @@ pub fn derive_blocks(binary: &Binary<'_>) -> BTreeMap<Addr, Block> {
     let mut to_process = Vec::with_capacity(64_000);
     derive_functions_from_data_objects(&binary.rdata_objects, &mut to_process);
     derive_functions_from_data_objects(&binary.data_objects, &mut to_process);
-    to_process.push((binary.entry_point, BlockType::Entry));
+    to_process.push((binary.entry_point, ToProcessType::Code(BlockType::Entry)));
 
     let mut processed = BTreeMap::<Addr, Block>::new();
 
@@ -35,21 +45,37 @@ pub fn derive_blocks(binary: &Binary<'_>) -> BTreeMap<Addr, Block> {
             continue;
         }
 
-        let size = if binary.sections.text.contains(addr) {
-            let code = binary.sections.text.slice_to_end(addr);
-            let size = derive_blocks_from_function(code, addr, &binary, &mut to_process);
-            Some(size)
-        } else {
-            None
-        };
+        match block_type {
+            ToProcessType::Code(block_type) => {
+                let size = if binary.sections.text.contains(addr) {
+                    let code = binary.sections.text.slice_to_end(addr);
+                    let size = derive_blocks_from_function(code, addr, binary, &mut to_process);
+                    Some(size)
+                } else {
+                    None
+                };
 
-        processed.insert(
-            addr,
-            Block {
-                typ: block_type,
-                size,
-            },
-        );
+                processed.insert(
+                    addr,
+                    Block {
+                        typ: block_type,
+                        size,
+                    },
+                );
+            }
+            ToProcessType::JumpTable => {
+                let size = process_jump_table(addr, binary, &mut to_process);
+                if size != 0 {
+                    processed.insert(
+                        addr,
+                        Block {
+                            typ: BlockType::JumpTable,
+                            size: Some(size),
+                        },
+                    );
+                }
+            }
+        }
     }
 
     normalise(processed)
@@ -122,59 +148,61 @@ fn normalise(mut blocks: BTreeMap<Addr, Block>) -> BTreeMap<Addr, Block> {
     new
 }
 
-pub fn derive_blocks_from_function(
+fn derive_blocks_from_function(
     code: &[u8],
     addr: Addr,
     binary: &Binary<'_>,
-    to_process: &mut Vec<(Addr, BlockType)>,
+    to_process: &mut Vec<(Addr, ToProcessType)>,
 ) -> usize {
     let mut decoder = ins::Decoder::new(code, addr);
 
     for ins in &mut decoder {
         match ins.instr {
             ins::Instruction::CallNear(addr) => {
-                to_process.push((addr, BlockType::Function));
+                to_process.push((addr, ToProcessType::Code(BlockType::Function)));
             }
             ins::Instruction::CallMem(addr) => {
-                to_process.push((addr, BlockType::Function));
+                to_process.push((addr, ToProcessType::Code(BlockType::Function)));
             }
             // End of block
             ins::Instruction::Return(_) => return decoder.position(),
-            ins::Instruction::JumpNear(addr) => {
-                to_process.push((addr, BlockType::Jump));
+            ins::Instruction::Jump(Op::Addr(addr)) => {
+                to_process.push((addr, ToProcessType::Code(BlockType::Jump)));
                 return decoder.position();
             }
-            ins::Instruction::JumpMem(addr) => {
-                to_process.push((addr, BlockType::Jump));
+            ins::Instruction::Jump(Op::Mem(mem)) => {
+                if looks_like_jump_table(&mem) && binary.sections.text.contains(Addr(mem.disp)) {
+                    to_process.push((Addr(mem.disp), ToProcessType::JumpTable));
+                }
+
                 return decoder.position();
             }
-            ins::Instruction::JumpConditionalNear(addr, _) => {
-                to_process.push((addr, BlockType::Jump));
-                to_process.push((decoder.address(), BlockType::Jump));
+            ins::Instruction::JumpConditional(Op::Addr(addr), _) => {
+                to_process.push((addr, ToProcessType::Code(BlockType::Jump)));
+                to_process.push((decoder.address(), ToProcessType::Code(BlockType::Jump)));
                 return decoder.position();
             }
-            ins::Instruction::JumpConditionalMem(addr, _) => {
-                to_process.push((addr, BlockType::Jump));
-                to_process.push((decoder.address(), BlockType::Jump));
+            ins::Instruction::JumpConditional(Op::Mem(mem), _) => {
+                if looks_like_jump_table(&mem) && binary.sections.text.contains(Addr(mem.disp)) {
+                    to_process.push((Addr(mem.disp), ToProcessType::JumpTable));
+                }
                 return decoder.position();
             }
-            ins::Instruction::JumpTable() => {}
-            ins::Instruction::JumpReg() => {}
             ins::Instruction::Loop(addr) => {
-                to_process.push((addr, BlockType::Jump));
-                to_process.push((decoder.address(), BlockType::Jump));
+                to_process.push((addr, ToProcessType::Code(BlockType::Jump)));
+                to_process.push((decoder.address(), ToProcessType::Code(BlockType::Jump)));
                 return decoder.position();
             }
             ins::Instruction::PushImm(imm) => {
                 if binary.sections.text.contains(Addr(imm)) {
-                    to_process.push((Addr(imm), BlockType::Indirect));
+                    to_process.push((Addr(imm), ToProcessType::Code(BlockType::Jump)));
                 }
             }
             ins::Instruction::MovImm(imm) => {
                 if let Ok(imm) = imm.try_into() {
                     let addr = Addr(imm);
                     if binary.sections.text.contains(addr) {
-                        to_process.push((addr, BlockType::Indirect));
+                        to_process.push((addr, ToProcessType::Code(BlockType::Indirect)));
                     }
                 }
             }
@@ -183,13 +211,33 @@ pub fn derive_blocks_from_function(
     decoder.position()
 }
 
-pub fn derive_functions_from_data_objects(
+fn process_jump_table(
+    mut addr: Addr,
+    binary: &Binary<'_>,
+    to_process: &mut Vec<(Addr, ToProcessType)>,
+) -> usize {
+    let start_addr = addr;
+    loop {
+        let target = Addr(binary.sections.text.read_u32_le(addr));
+        if !binary.sections.text.contains(target) {
+            return usize::try_from(addr.0 - start_addr.0).unwrap();
+        }
+        to_process.push((target, ToProcessType::Code(BlockType::Jump)));
+        addr += 4;
+    }
+}
+
+fn derive_functions_from_data_objects(
     robjects: &[DataObject],
-    result: &mut Vec<(Addr, BlockType)>,
+    result: &mut Vec<(Addr, ToProcessType)>,
 ) {
     for obj in robjects {
         if let DataObjectKind::FunctionsRef(addr) = &obj.kind {
-            result.push((*addr, BlockType::Function));
+            result.push((*addr, ToProcessType::Code(BlockType::Function)));
         }
     }
+}
+
+pub fn looks_like_jump_table(mem: &Mem) -> bool {
+    !mem.is_base && mem.is_index && mem.scale == 4
 }

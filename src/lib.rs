@@ -59,6 +59,10 @@ impl<'a> SectionData<'a> {
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
+
+    pub fn read_u32_le(&self, addr: Addr) -> u32 {
+        u32::from_le_bytes(self.slice(addr, 4).try_into().unwrap())
+    }
 }
 
 #[derive(Debug)]
@@ -95,9 +99,7 @@ impl<'a> Sections<'a> {
     pub fn read_u32_le(&self, addr: Addr) -> Option<u32> {
         for section in self.sections() {
             if section.contains(addr) {
-                return Some(u32::from_le_bytes(
-                    section.slice(addr, 4).try_into().unwrap(),
-                ));
+                return Some(section.read_u32_le(addr));
             }
         }
         None
@@ -330,14 +332,10 @@ pub fn operand_signature(instr: &Instruction, index: u32) -> String {
             let scale = instr.memory_index_scale();
             let disp = instr.memory_displacement32();
 
-            // format!(
-            //     "MEM(base={},index={},scale={},disp={})",
-            //     base != Register::None,
-            //     index != Register::None,
-            //     scale != 1,
-            //     disp != 0
-            // )
-            "MEM".to_string()
+            format!(
+                "MEM(base={:?},index={:?},scale={},disp={})",
+                base, index, scale, disp
+            )
         }
 
         OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64 => {
