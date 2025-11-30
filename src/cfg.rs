@@ -1,31 +1,176 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Range};
 
-use crate::{Binary, RDataObject, RDataObjectKind, addr::Addr};
+use crate::{Binary, RDataObject, RDataObjectKind, addr::Addr, ins};
 
-pub fn derive_blocks(binary: &Binary<'_>) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockType {
+    Entry,
+    Function,
+    Jump,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Block {
+    pub typ: BlockType,
+    pub size: Option<usize>,
+}
+
+impl Block {
+    pub fn size_u32_assert(&self) -> u32 {
+        self.size.unwrap_or(0).try_into().unwrap()
+    }
+}
+
+pub fn derive_blocks(binary: &Binary<'_>) -> BTreeMap<Addr, Block> {
     let mut to_process = derive_functions_from_rdata(&binary.robjects);
-    to_process.push(binary.entry_point);
+    to_process.push((binary.entry_point, BlockType::Entry));
 
-    let mut processed = BTreeMap::<Addr, ()>::new();
+    let mut processed = BTreeMap::<Addr, Block>::new();
 
-    while let Some(addr) = to_process.pop() {
+    while let Some((addr, block_type)) = to_process.pop() {
         if processed.contains_key(&addr) {
             continue;
         }
 
-        let block = binary.sections.data.slice_to_end(addr);
+        let size = if binary.sections.text.contains(addr) {
+            let code = binary.sections.text.slice_to_end(addr);
+            let size = derive_blocks_from_function(code, addr, &mut to_process);
+            Some(size)
+        } else {
+            None
+        };
+
+        processed.insert(
+            addr,
+            Block {
+                typ: block_type,
+                size,
+            },
+        );
+    }
+
+    normalise(processed)
+}
+
+struct NormaliseOverlap {
+    blocks: [Range<Addr>; 3],
+}
+
+fn normalise_overlap(block1: Range<Addr>, block2: Range<Addr>) -> Option<NormaliseOverlap> {
+    if are_overlapping(&block1, &block2) {
+        let mut values = [block1.start, block1.end, block2.start, block2.end];
+        values.sort();
+
+        Some(NormaliseOverlap {
+            blocks: [
+                values[0]..values[1],
+                values[1]..values[2],
+                values[2]..values[3],
+            ],
+        })
+    } else {
+        None
     }
 }
 
-pub fn derive_blocks_from_code(code: &[u8]) {
-    todo!()
+fn are_overlapping(block1: &Range<Addr>, block2: &Range<Addr>) -> bool {
+    block1.start < block2.end && block2.start < block1.end
 }
 
-pub fn derive_functions_from_rdata(robjects: &[RDataObject]) -> Vec<Addr> {
+fn normalise(mut blocks: BTreeMap<Addr, Block>) -> BTreeMap<Addr, Block> {
+    let mut new = BTreeMap::new();
+
+    let Some((mut prev_addr, mut prev_block)) = blocks.pop_first() else {
+        return new;
+    };
+
+    for (next_addr, next_block) in blocks {
+        let prev_range = prev_addr..(prev_addr + prev_block.size_u32_assert());
+        let next_range = next_addr..(next_addr + next_block.size_u32_assert());
+
+        if let Some(normalised) = normalise_overlap(prev_range, next_range) {
+            for (i, normalised_block) in normalised
+                .blocks
+                .into_iter()
+                .filter(|block| !block.is_empty())
+                .enumerate()
+            {
+                let size = normalised_block.end.0 - normalised_block.start.0;
+                let block = Block {
+                    typ: if i == 0 {
+                        prev_block.typ
+                    } else {
+                        BlockType::Jump
+                    },
+                    size: Some(usize::try_from(size).unwrap()),
+                };
+                new.insert(normalised_block.start, block);
+
+                prev_addr = normalised_block.start;
+                prev_block = block;
+            }
+        } else {
+            new.insert(prev_addr, prev_block);
+            prev_addr = next_addr;
+            prev_block = next_block;
+        }
+    }
+
+    new
+}
+
+pub fn derive_blocks_from_function(
+    code: &[u8],
+    addr: Addr,
+    to_process: &mut Vec<(Addr, BlockType)>,
+) -> usize {
+    let mut decoder = ins::Decoder::new(code, addr);
+
+    for ins in &mut decoder {
+        match ins.instr {
+            ins::Instruction::CallNear(addr) => {
+                to_process.push((addr, BlockType::Function));
+            }
+            ins::Instruction::CallMem(addr) => {
+                to_process.push((addr, BlockType::Function));
+            }
+            // End of block
+            ins::Instruction::Return(_) => return decoder.position(),
+            ins::Instruction::JumpNear(addr) => {
+                to_process.push((addr, BlockType::Jump));
+                return decoder.position();
+            }
+            ins::Instruction::JumpMem(addr) => {
+                to_process.push((addr, BlockType::Jump));
+                return decoder.position();
+            }
+            ins::Instruction::JumpConditionalNear(addr, _) => {
+                to_process.push((addr, BlockType::Jump));
+                to_process.push((decoder.address(), BlockType::Jump));
+                return decoder.position();
+            }
+            ins::Instruction::JumpConditionalMem(addr, _) => {
+                to_process.push((addr, BlockType::Jump));
+                to_process.push((decoder.address(), BlockType::Jump));
+                return decoder.position();
+            }
+            ins::Instruction::JumpTable() => {}
+            ins::Instruction::JumpReg() => {}
+            ins::Instruction::Loop(addr) => {
+                to_process.push((addr, BlockType::Jump));
+                to_process.push((decoder.address(), BlockType::Jump));
+                return decoder.position();
+            }
+        }
+    }
+    decoder.position()
+}
+
+pub fn derive_functions_from_rdata(robjects: &[RDataObject]) -> Vec<(Addr, BlockType)> {
     let mut result = Vec::with_capacity(robjects.len() / 4);
     for obj in robjects {
         if let RDataObjectKind::FunctionsRef(addr) = &obj.kind {
-            result.push(*addr);
+            result.push((*addr, BlockType::Function));
         }
     }
     result

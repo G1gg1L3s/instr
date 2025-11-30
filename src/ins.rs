@@ -61,7 +61,14 @@ pub enum Instruction {
     JumpConditionalMem(Addr, Condition),
     JumpTable(),
     JumpReg(),
-    Loop(Addr), // optional: could also store CX type
+    // TODO: condition type
+    Loop(Addr),
+}
+
+#[derive(Debug)]
+pub struct BinaryInstruction {
+    pub addr: Addr,
+    pub instr: Instruction,
 }
 
 fn parse_call(instr: &iced_x86::Instruction) -> Option<Instruction> {
@@ -186,5 +193,45 @@ pub fn parse_instruction(instr: &iced_x86::Instruction) -> Option<Instruction> {
         | Mnemonic::Loope
         | Mnemonic::Loopne => parse_jump(instr),
         _ => None,
+    }
+}
+
+pub struct Decoder<'a> {
+    decoder: iced_x86::Decoder<'a>,
+}
+
+impl<'a> Decoder<'a> {
+    pub fn new(data: &'a [u8], addr: Addr) -> Self {
+        let decoder =
+            iced_x86::Decoder::with_ip(32, data, addr.0.into(), iced_x86::DecoderOptions::NONE);
+
+        Self { decoder }
+    }
+
+    pub fn position(&self) -> usize {
+        self.decoder.position()
+    }
+
+    pub fn address(&self) -> Addr {
+        Addr::from_u64_assert(self.decoder.ip())
+    }
+}
+
+impl<'a> std::iter::Iterator for Decoder<'a> {
+    type Item = BinaryInstruction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if !self.decoder.can_decode() {
+                return None;
+            }
+            let instr = self.decoder.decode();
+            if let Some(i) = parse_instruction(&instr) {
+                return Some(BinaryInstruction {
+                    addr: Addr::from_u64_assert(instr.ip()),
+                    instr: i,
+                });
+            }
+        }
     }
 }

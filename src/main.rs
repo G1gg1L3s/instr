@@ -1,8 +1,6 @@
-use std::collections::BTreeSet;
-
 use iced_x86::Decoder;
 use instr::{
-    addr::Addr, extract_call_address, ins::parse_instruction, instruction_signature, parse_binary,
+    addr::Addr, cfg::BlockType, ins::parse_instruction, instruction_signature, parse_binary,
 };
 
 fn main() {
@@ -15,50 +13,62 @@ fn main() {
         binary.entry_point, binary.sections
     );
 
-    let mut decoder = Decoder::with_ip(
-        32,
-        binary.sections.text.data,
-        binary.sections.text.address.0.into(),
-        iced_x86::DecoderOptions::NONE,
+    let blocks = instr::cfg::derive_blocks(&binary);
+    println!(
+        "Total {} blocks ({} funcs)",
+        blocks.len(),
+        blocks
+            .iter()
+            .filter(|(_, block)| matches!(block.typ, BlockType::Function | BlockType::Entry))
+            .count()
     );
 
-    let mut variants = BTreeSet::new();
+    let mut last_addr_end = None;
 
-    for instr in &mut decoder {
-        let sig = instruction_signature(&instr);
-        let instrformat = instr.to_string();
-        let internal = parse_instruction(&instr);
-        if let Some(internal) = internal {
-            eprintln!(
-                "0x{:x} {: <30} | {} | {:?}",
-                instr.ip(),
-                instrformat,
-                sig,
-                internal
-            );
-        } else {
-            eprintln!(
-                "0x{:x} {: <30} | {} ({:?})",
-                instr.ip(),
-                instrformat,
-                sig,
-                instr.mnemonic()
-            );
+    for (addr, block) in blocks {
+        let Some(size) = block.size else {
+            eprintln!("!! {} not in text", addr);
+            continue;
+        };
+
+        if let Some(skipped) = last_addr_end.map(|last: Addr| addr.0 - last.0)
+            && skipped != 0
+        {
+            eprintln!("... Skipped 0x{:x} ({}) bytes ...", skipped, skipped);
         }
 
-        variants.insert(sig);
+        last_addr_end = Some(addr + size as u32);
 
-        if let Some(addr) = extract_call_address(&instr) {
-            eprintln!(
-                ">> 0x{addr:x} (addr in .text: {})",
-                binary.sections.text.contains(Addr(addr as _))
-            );
+        let code = binary.sections.text.slice(addr, size);
+        let decoder = Decoder::with_ip(32, code, addr.0.into(), iced_x86::DecoderOptions::NONE);
+
+        match block.typ {
+            instr::cfg::BlockType::Entry => eprintln!("_start: ({size}):"),
+            instr::cfg::BlockType::Function => eprintln!("_func_{:x} ({size}):", addr.0),
+            instr::cfg::BlockType::Jump => eprintln!("_block_{:x} ({size}):", addr.0),
         }
-    }
 
-    // ----- PRINT RESULTS -----
-    println!("\nUnique instruction variants: {}", variants.len());
-    for v in variants {
-        println!("{}", v);
+        for ins in decoder {
+            let sig = instruction_signature(&ins);
+            let instrformat = ins.to_string();
+            let internal = parse_instruction(&ins);
+            if let Some(internal) = internal {
+                eprintln!(
+                    "    0x{:x} {: <30} | {} | {:?}",
+                    ins.ip(),
+                    instrformat,
+                    sig,
+                    internal
+                );
+            } else {
+                eprintln!(
+                    "    0x{:x} {: <30} | {} ({:?})",
+                    ins.ip(),
+                    instrformat,
+                    sig,
+                    ins.mnemonic()
+                );
+            }
+        }
     }
 }

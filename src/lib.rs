@@ -47,10 +47,6 @@ impl<'a> SectionData<'a> {
     }
 
     pub fn slice_to_end(&self, addr: Addr) -> &'a [u8] {
-        if self.contains(addr) {
-            return b"";
-        }
-
         let index = self.index(addr);
         &self.data[index..]
     }
