@@ -2,6 +2,8 @@ pub mod addr;
 pub mod cfg;
 pub mod ins;
 
+use std::borrow::Cow;
+
 use iced_x86::{Instruction, Mnemonic, OpKind, Register};
 use pe_parser::{pe::PortableExecutable, section::SectionHeader};
 
@@ -310,7 +312,7 @@ pub fn parse_import_table(
     Some(res)
 }
 
-pub fn operand_signature(instr: &Instruction, index: u32) -> String {
+pub fn operand_signature_full(instr: &Instruction, index: u32) -> String {
     let kind = instr.op_kind(index);
 
     match kind {
@@ -345,6 +347,42 @@ pub fn operand_signature(instr: &Instruction, index: u32) -> String {
         OpKind::FarBranch16 | OpKind::FarBranch32 => "FAR_BRANCH".to_string(),
 
         _ => format!("{:?}", kind),
+    }
+}
+
+pub fn instruction_signature_full(instr: &iced_x86::Instruction) -> String {
+    let mut ops = Vec::new();
+    for i in 0..instr.op_count() {
+        ops.push(operand_signature_full(instr, i));
+    }
+    format!("{:?}({})", instr.mnemonic(), ops.join(","))
+}
+
+pub fn operand_signature(instr: &Instruction, index: u32) -> Cow<'static, str> {
+    let kind = instr.op_kind(index);
+
+    match kind {
+        OpKind::Register => Cow::Borrowed("REG"),
+
+        OpKind::Immediate8
+        | OpKind::Immediate16
+        | OpKind::Immediate32
+        | OpKind::Immediate64
+        | OpKind::Immediate8_2nd
+        | OpKind::Immediate8to16
+        | OpKind::Immediate8to32
+        | OpKind::Immediate8to64
+        | OpKind::Immediate32to64 => Cow::Borrowed("IMM"),
+
+        OpKind::Memory => Cow::Borrowed("MEM"),
+
+        OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64 => {
+            Cow::Borrowed("NEAR_BRANCH")
+        }
+
+        OpKind::FarBranch16 | OpKind::FarBranch32 => Cow::Borrowed("FAR_BRANCH"),
+
+        _ => Cow::Owned(format!("{:?}", kind)),
     }
 }
 

@@ -1,9 +1,11 @@
+use std::collections::BTreeSet;
+
 use iced_x86::Decoder;
 use instr::{
     addr::Addr,
     cfg::{Block, BlockType},
     ins::parse_instruction,
-    instruction_signature, parse_binary,
+    instruction_signature, instruction_signature_full, parse_binary,
 };
 
 struct CountBlocks {
@@ -58,6 +60,8 @@ fn main() {
 
     let mut last_addr_end = Option::<Addr>::None;
 
+    let mut unique_instructions = BTreeSet::new();
+
     for (addr, block) in blocks {
         let Some(size) = block.size else {
             println!("!! {} not in text", addr);
@@ -69,7 +73,7 @@ fn main() {
                 Some(0) => {} // OK
                 Some(skipped) => {
                     println!("_skipped {} bytes:", skipped);
-                    print_asm(&binary, last_addr_end, skipped.try_into().unwrap());
+                    print_asm(&binary, last_addr_end, skipped.try_into().unwrap(), None);
                 }
                 _ => println!("... OVERLAP"),
             }
@@ -97,7 +101,7 @@ fn main() {
             instr::cfg::BlockType::JumpTable => println!("_jump_table_{:x} ({size}):", addr.0),
         }
 
-        print_asm(&binary, addr, size);
+        print_asm(&binary, addr, size, Some(&mut unique_instructions));
     }
 
     println!(".rdata:");
@@ -109,14 +113,24 @@ fn main() {
     for obj in &binary.data_objects {
         println!("  - {:?}", obj);
     }
+
+    println!(".unique_instructions ({}):", unique_instructions.len());
+    for ins in unique_instructions {
+        println!("  - {}", ins);
+    }
 }
 
-fn print_asm(binary: &instr::Binary<'_>, addr: Addr, size: usize) {
+fn print_asm(
+    binary: &instr::Binary<'_>,
+    addr: Addr,
+    size: usize,
+    mut out: Option<&mut BTreeSet<String>>,
+) {
     let code = binary.sections.text.slice(addr, size);
     let decoder = Decoder::with_ip(32, code, addr.0.into(), iced_x86::DecoderOptions::NONE);
 
     for ins in decoder {
-        let sig = instruction_signature(&ins);
+        let sig = instruction_signature_full(&ins);
         let instrformat = ins.to_string();
         let internal = parse_instruction(&ins);
         if let Some(internal) = internal {
@@ -135,6 +149,10 @@ fn print_asm(binary: &instr::Binary<'_>, addr: Addr, size: usize) {
                 sig,
                 ins.mnemonic()
             );
+        }
+
+        if let Some(out) = &mut out {
+            out.insert(instruction_signature(&ins));
         }
     }
 }
