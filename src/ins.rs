@@ -3,7 +3,7 @@ use iced_x86::{Mnemonic, OpKind, Register};
 use crate::addr::Addr;
 
 /// Represents x86 jump conditions and how they are evaluated.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Condition {
     // Equality / Inequality
     /// `Equal (JE/JZ)` - Jump if ZF=1 (zero flag set, result of previous operation was zero)
@@ -50,7 +50,7 @@ pub enum Condition {
     CxZero,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Mem {
     pub is_base: bool,
     pub is_index: bool,
@@ -58,13 +58,13 @@ pub struct Mem {
     pub scale: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Op {
     Addr(Addr),
     Mem(Mem),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Instruction {
     CallNear(Addr),
     // TODO: use op
@@ -76,11 +76,14 @@ pub enum Instruction {
     Loop(Addr),
     PushImm(u32),
     MovImm(u64),
+    Int3,
+    IcedX86,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct BinaryInstruction {
     pub addr: Addr,
+    pub len: usize,
     pub instr: Instruction,
 }
 
@@ -203,10 +206,11 @@ fn parse_mov(instr: &iced_x86::Instruction) -> Option<Instruction> {
     }
 }
 
-pub fn parse_instruction(instr: &iced_x86::Instruction) -> Option<Instruction> {
+pub fn parse_instruction(instr: &iced_x86::Instruction) -> Instruction {
+    let default = Instruction::IcedX86;
     match instr.mnemonic() {
-        Mnemonic::Call => parse_call(instr),
-        Mnemonic::Ret => parse_ret(instr),
+        Mnemonic::Call => parse_call(instr).unwrap_or(default),
+        Mnemonic::Ret => parse_ret(instr).unwrap_or(default),
         Mnemonic::Jmp
         | Mnemonic::Je
         | Mnemonic::Jne
@@ -229,10 +233,11 @@ pub fn parse_instruction(instr: &iced_x86::Instruction) -> Option<Instruction> {
         | Mnemonic::Jrcxz
         | Mnemonic::Loop
         | Mnemonic::Loope
-        | Mnemonic::Loopne => parse_jump(instr),
-        Mnemonic::Push => parse_push(instr),
-        Mnemonic::Mov => parse_mov(instr),
-        _ => None,
+        | Mnemonic::Loopne => parse_jump(instr).unwrap_or(default),
+        Mnemonic::Push => parse_push(instr).unwrap_or(default),
+        Mnemonic::Mov => parse_mov(instr).unwrap_or(default),
+        Mnemonic::Int3 => Instruction::Int3,
+        _ => default,
     }
 }
 
@@ -261,17 +266,16 @@ impl<'a> std::iter::Iterator for Decoder<'a> {
     type Item = BinaryInstruction;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if !self.decoder.can_decode() {
-                return None;
-            }
-            let instr = self.decoder.decode();
-            if let Some(i) = parse_instruction(&instr) {
-                return Some(BinaryInstruction {
-                    addr: Addr::from_u64_assert(instr.ip()),
-                    instr: i,
-                });
-            }
+        if !self.decoder.can_decode() {
+            return None;
         }
+        let instr = self.decoder.decode();
+        let i = parse_instruction(&instr);
+
+        return Some(BinaryInstruction {
+            addr: Addr::from_u64_assert(instr.ip()),
+            instr: i,
+            len: instr.len(),
+        });
     }
 }

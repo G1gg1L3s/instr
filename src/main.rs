@@ -3,35 +3,37 @@ use std::collections::BTreeSet;
 use iced_x86::Decoder;
 use instr::{
     addr::Addr,
-    cfg::{Block, BlockType},
-    ins::parse_instruction,
-    instruction_signature, instruction_signature_full, parse_binary,
+    ins::{Instruction, parse_instruction},
+    instruction_signature, instruction_signature_full,
+    new_cfg::{Block, BlockType},
+    parse_binary,
 };
 
 struct CountBlocks {
     funcs: usize,
     jumps: usize,
-    indirect: usize,
+    filler: usize,
     jump_table: usize,
 }
 
 fn count_blocks<'a>(iter: impl Iterator<Item = &'a Block>) -> CountBlocks {
     let mut funcs = 0;
     let mut jumps = 0;
-    let mut indirect = 0;
+    let mut filler = 0;
     let mut jump_table = 0;
     for block in iter {
         match block.typ {
-            BlockType::Entry | BlockType::Function => funcs += 1,
+            BlockType::Function => funcs += 1,
+            BlockType::Entry => funcs += 1,
             BlockType::Jump => jumps += 1,
-            BlockType::Indirect => indirect += 1,
+            BlockType::Filler => filler += 1,
             BlockType::JumpTable => jump_table += 1,
         }
     }
     CountBlocks {
         funcs,
         jumps,
-        indirect,
+        filler,
         jump_table,
     }
 }
@@ -46,40 +48,35 @@ fn main() {
         binary.entry_point, binary.sections
     );
 
-    let blocks = instr::cfg::derive_blocks(&binary);
-    let count = count_blocks(blocks.values());
+    let blocks = instr::new_cfg::cut_blocks_as_sausage(&binary);
+    let count = count_blocks(blocks.iter());
 
     println!(
-        "Total {} blocks ({} funcs, {} jumps, {} indirect, {} jump tables)",
+        "Total {} blocks ({} funcs, {} jumps, {} fillers, {} jump tables)",
         blocks.len(),
         count.funcs,
         count.jumps,
-        count.indirect,
+        count.filler,
         count.jump_table
     );
 
-    let mut last_addr_end = Option::<Addr>::None;
+    let mut last_addr_end = binary.sections.text.address;
 
     let mut unique_instructions = BTreeSet::new();
 
-    for (addr, block) in blocks {
-        let Some(size) = block.size else {
-            println!("!! {} not in text", addr);
-            continue;
-        };
-
-        if let Some(last_addr_end) = last_addr_end {
-            match addr.0.checked_sub(last_addr_end.0) {
-                Some(0) => {} // OK
-                Some(skipped) => {
-                    println!("_skipped {} bytes:", skipped);
-                    print_asm(&binary, last_addr_end, skipped.try_into().unwrap(), None);
-                }
-                _ => println!("... OVERLAP"),
+    for block in blocks {
+        match block.addr.0.checked_sub(last_addr_end.0) {
+            Some(0) => {} // OK
+            Some(skipped) => {
+                println!("_skipped {} bytes:", skipped);
+                print_asm(&binary, last_addr_end, skipped.try_into().unwrap(), None);
             }
+            _ => println!("... OVERLAP"),
         }
 
-        last_addr_end = Some(addr + size as u32);
+        let addr = block.addr;
+        let size = block.size;
+        last_addr_end = block.addr + block.size as u32;
 
         if block.typ == BlockType::JumpTable {
             println!("_jump_table ({size}):");
@@ -94,11 +91,11 @@ fn main() {
         }
 
         match block.typ {
-            instr::cfg::BlockType::Entry => println!("_start ({size}):"),
-            instr::cfg::BlockType::Function => println!("_func_{:x} ({size}):", addr.0),
-            instr::cfg::BlockType::Jump => println!("_block_{:x} ({size}):", addr.0),
-            instr::cfg::BlockType::Indirect => println!("_indirect_{:x} ({size}):", addr.0),
-            instr::cfg::BlockType::JumpTable => println!("_jump_table_{:x} ({size}):", addr.0),
+            BlockType::Entry => println!("_start ({size}):"),
+            BlockType::Function => println!("_func_{:x} ({size}):", addr.0),
+            BlockType::Jump => println!("_block_{:x} ({size}):", addr.0),
+            BlockType::Filler => println!("_filler_{:x} ({size}):", addr.0),
+            BlockType::JumpTable => println!("_jump_table_{:x} ({size}):", addr.0),
         }
 
         print_asm(&binary, addr, size, Some(&mut unique_instructions));
@@ -133,7 +130,7 @@ fn print_asm(
         let sig = instruction_signature_full(&ins);
         let instrformat = ins.to_string();
         let internal = parse_instruction(&ins);
-        if let Some(internal) = internal {
+        if !matches!(internal, Instruction::IcedX86) {
             println!(
                 "    0x{:x} {: <30} | {} | {:?}",
                 ins.ip(),

@@ -206,6 +206,10 @@ fn derive_blocks_from_function(
                     }
                 }
             }
+            ins::Instruction::Int3 => {
+                return decoder.position();
+            }
+            ins::Instruction::IcedX86 => {}
         }
     }
     decoder.position()
