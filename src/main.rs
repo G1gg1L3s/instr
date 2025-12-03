@@ -5,7 +5,7 @@ use instr::{
     addr::Addr,
     ins::{Instruction, parse_instruction},
     instruction_signature, instruction_signature_full,
-    new_cfg::{Block, BlockType},
+    new_cfg::{Block, CodeBlockType},
     parse_binary,
 };
 
@@ -22,12 +22,14 @@ fn count_blocks<'a>(iter: impl Iterator<Item = &'a Block>) -> CountBlocks {
     let mut filler = 0;
     let mut jump_table = 0;
     for block in iter {
-        match block.typ {
-            BlockType::Function => funcs += 1,
-            BlockType::Entry => funcs += 1,
-            BlockType::Jump => jumps += 1,
-            BlockType::Filler => filler += 1,
-            BlockType::JumpTable => jump_table += 1,
+        match block {
+            Block::Code(code_block) => match code_block.typ {
+                CodeBlockType::Function => funcs += 1,
+                CodeBlockType::Entry => funcs += 1,
+                CodeBlockType::Jump => jumps += 1,
+                CodeBlockType::Filler => filler += 1,
+            },
+            Block::JumpTable(_) => jump_table += 1,
         }
     }
     CountBlocks {
@@ -65,7 +67,7 @@ fn main() {
     let mut unique_instructions = BTreeSet::new();
 
     for block in blocks {
-        match block.addr.0.checked_sub(last_addr_end.0) {
+        match block.addr().0.checked_sub(last_addr_end.0) {
             Some(0) => {} // OK
             Some(skipped) => {
                 println!("_skipped {} bytes:", skipped);
@@ -74,31 +76,29 @@ fn main() {
             _ => println!("... OVERLAP"),
         }
 
-        let addr = block.addr;
-        let size = block.size;
-        last_addr_end = block.addr + block.size as u32;
+        let addr = block.addr();
+        let size = block.size();
+        last_addr_end = block.addr() + block.size() as u32;
 
-        if block.typ == BlockType::JumpTable {
-            println!("_jump_table ({size}):");
-            let table = binary.sections.text.slice(addr, size);
-            let mut line_addr = addr;
-            for target in table.as_chunks::<4>().0 {
-                let target = Addr(u32::from_le_bytes(*target));
-                println!("   - {line_addr} -> {target}");
-                line_addr += 4;
+        match block {
+            Block::Code(code_block) => {
+                match code_block.typ {
+                    CodeBlockType::Entry => println!("_start ({size}):"),
+                    CodeBlockType::Function => println!("_func_{:x} ({size}):", addr.0),
+                    CodeBlockType::Jump => println!("_jump_{:x} ({size}):", addr.0),
+                    CodeBlockType::Filler => println!("_filler_{:x} ({size}):", addr.0),
+                }
+                print_asm(&binary, addr, size, Some(&mut unique_instructions));
             }
-            continue;
+            Block::JumpTable(jump_table) => {
+                println!("_jump_table_{:x} ({}):", jump_table.addr.0, size);
+                let mut line_addr = addr;
+                for target in &jump_table.jumps {
+                    println!("   - {line_addr} -> {target}");
+                    line_addr += 4;
+                }
+            }
         }
-
-        match block.typ {
-            BlockType::Entry => println!("_start ({size}):"),
-            BlockType::Function => println!("_func_{:x} ({size}):", addr.0),
-            BlockType::Jump => println!("_block_{:x} ({size}):", addr.0),
-            BlockType::Filler => println!("_filler_{:x} ({size}):", addr.0),
-            BlockType::JumpTable => println!("_jump_table_{:x} ({size}):", addr.0),
-        }
-
-        print_asm(&binary, addr, size, Some(&mut unique_instructions));
     }
 
     println!(".rdata:");

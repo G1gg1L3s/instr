@@ -1,18 +1,19 @@
 use crate::{
     Binary,
     addr::Addr,
+    block_set::{BlockSet, SplitError},
     ins::{self, BinaryInstruction, Instruction, Mem, Op},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BlockType {
+pub enum CodeBlockType {
     Function,
     Entry,
     Jump,
     Filler,
-    JumpTable,
 }
 
+#[derive(Debug, Clone, Copy)]
 enum ToProcessType {
     Call,
     Jump,
@@ -21,11 +22,113 @@ enum ToProcessType {
 }
 
 #[derive(Debug, Clone)]
-pub struct Block {
+pub struct CodeBlock {
     pub addr: Addr,
     pub size: usize,
-    pub typ: BlockType,
-    pub ins: Vec<BinaryInstruction>,
+    pub typ: CodeBlockType,
+}
+
+#[derive(Debug, Clone)]
+pub struct JumpTable {
+    pub addr: Addr,
+    pub jumps: Vec<Addr>,
+}
+
+impl JumpTable {
+    pub fn size(&self) -> usize {
+        self.jumps.len() * 4
+    }
+
+    pub fn split(mut self, addr: Addr) -> Result<(Self, Self), Self> {
+        let idx = addr.0.checked_sub(self.addr.0).unwrap();
+        let idx = usize::try_from(idx).unwrap() / 4;
+
+        if self.jumps.len() <= idx {
+            return Err(self);
+        }
+        let right = self.jumps.split_off(idx);
+        Ok((
+            self,
+            Self {
+                addr: addr,
+                jumps: right,
+            },
+        ))
+    }
+
+    fn contains(&self, addr: Addr) -> bool {
+        let end = self.addr + u32::try_from(self.size()).unwrap();
+        (self.addr..end).contains(&addr)
+    }
+
+    fn truncate(&mut self, size: usize) {
+        let elements = size / 4;
+        self.jumps.truncate(elements);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Block {
+    Code(CodeBlock),
+    JumpTable(JumpTable),
+}
+
+impl Block {
+    pub fn addr(&self) -> Addr {
+        match self {
+            Block::Code(code_block) => code_block.addr,
+            Block::JumpTable(jump_table) => jump_table.addr,
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Block::Code(code_block) => code_block.size,
+            Block::JumpTable(jump_table) => jump_table.size(),
+        }
+    }
+
+    pub fn split(self, addr: Addr, new_type: CodeBlockType) -> Result<(Self, Self), Self> {
+        match self {
+            Block::Code(code_block) => match code_block.split(addr, new_type) {
+                Ok((left, right)) => Ok((Block::Code(left), Block::Code(right))),
+                Err(block) => Err(Block::Code(block)),
+            },
+            Block::JumpTable(jump_table) => match jump_table.split(addr) {
+                Ok((left, right)) => Ok((Block::JumpTable(left), Block::JumpTable(right))),
+                Err(table) => Err(Block::JumpTable(table)),
+            },
+        }
+    }
+
+    pub fn contains(&self, addr: Addr) -> bool {
+        match self {
+            Block::Code(code_block) => code_block.contains(addr),
+            Block::JumpTable(jump_table) => jump_table.contains(addr),
+        }
+    }
+}
+
+impl CodeBlock {
+    pub fn split(mut self, addr: Addr, new_type: CodeBlockType) -> Result<(Self, Self), Self> {
+        let left_size = addr.0.checked_sub(self.addr.0).unwrap();
+        let left_size = usize::try_from(left_size).unwrap();
+        let right_size = self.size - left_size;
+        self.size = left_size;
+        Ok((
+            self,
+            CodeBlock {
+                addr,
+                size: right_size,
+                typ: new_type,
+            },
+        ))
+    }
+
+    fn contains(&self, addr: Addr) -> bool {
+        let end = self.addr + u32::try_from(self.size).unwrap();
+        (self.addr..end).contains(&addr)
+    }
 }
 
 pub fn cut_blocks_as_sausage(binary: &Binary<'_>) -> Vec<Block> {
@@ -34,13 +137,70 @@ pub fn cut_blocks_as_sausage(binary: &Binary<'_>) -> Vec<Block> {
     instructions.extend(decoder);
 
     let (blocks, to_process) = cut_slice_of_instructions(binary, &instructions);
+
+    eprintln!(
+        ">> debug block: {:?}",
+        to_process.iter().find(|(addr, _)| *addr == Addr(0x422a45))
+    );
+
+    let blocks = process_blocks(binary, blocks, to_process);
     blocks
+}
+
+fn process_blocks(
+    binary: &Binary<'_>,
+    blocks: Vec<CodeBlock>,
+    mut to_process: Vec<(Addr, ToProcessType)>,
+) -> Vec<Block> {
+    let mut blockset = BlockSet::new();
+    for block in blocks {
+        blockset.insert_non_overlaping_unchecked(Block::Code(block));
+    }
+
+    while let Some((addr, to_process_type)) = to_process.pop() {
+        match to_process_type {
+            ToProcessType::Call | ToProcessType::Jump | ToProcessType::Indirect => {
+                let Ok(block) = blockset.get_split(addr, CodeBlockType::Filler) else {
+                    continue;
+                };
+
+                if let Block::Code(block) = block {
+                    match to_process_type {
+                        ToProcessType::Call => block.typ = CodeBlockType::Function,
+                        ToProcessType::Jump | ToProcessType::Indirect => {
+                            block.typ = CodeBlockType::Jump
+                        }
+                        ToProcessType::JumpTable => unreachable!(),
+                    }
+                }
+            }
+            ToProcessType::JumpTable => {
+                let mut jump_table = process_jump_table(addr, binary);
+                to_process.extend(
+                    jump_table
+                        .jumps
+                        .iter()
+                        .map(|jump| (*jump, ToProcessType::Jump)),
+                );
+
+                match blockset.remove_split(jump_table.addr, jump_table.size()) {
+                    Ok(block) => jump_table.truncate(block.size()),
+                    Err(SplitError::OutOfRange) => {}
+                    Err(SplitError::Unalighed) => panic!("unalighed jump table"),
+                }
+
+                blockset.insert_non_overlaping_unchecked(Block::JumpTable(jump_table));
+            }
+        }
+    }
+
+    blockset.into_iter().collect()
 }
 
 fn cut_slice_of_instructions(
     binary: &Binary<'_>,
     mut instructions: &[BinaryInstruction],
-) -> (Vec<Block>, Vec<(Addr, ToProcessType)>) {
+) -> (Vec<CodeBlock>, Vec<(Addr, ToProcessType)>) {
     let mut res = vec![];
     let mut to_process = vec![];
 
@@ -56,7 +216,7 @@ fn cut_block(
     binary: &Binary<'_>,
     instructions: &[BinaryInstruction],
     to_process: &mut Vec<(Addr, ToProcessType)>,
-) -> Option<(Block, usize)> {
+) -> Option<(CodeBlock, usize)> {
     let first_instr = instructions.first().copied()?;
 
     if let Instruction::Int3 = first_instr.instr {
@@ -64,15 +224,17 @@ fn cut_block(
     }
 
     let index = process_function_till_the_end_of_block(binary, instructions, to_process);
-    let instructions = instructions[..index].to_vec();
-    let block = Block {
+    let block = CodeBlock {
         addr: first_instr.addr,
-        size: instructions.iter().map(|i| i.len).sum(),
-        typ: BlockType::Jump,
-        ins: instructions,
+        size: block_size(&instructions[..index]),
+        typ: CodeBlockType::Jump,
     };
 
     Some((block, index))
+}
+
+fn block_size(instructions: &[BinaryInstruction]) -> usize {
+    instructions.iter().map(|i| i.len).sum()
 }
 
 fn process_function_till_the_end_of_block(
@@ -141,49 +303,32 @@ fn process_function_till_the_end_of_block(
 fn cut_filler(
     instructions: &[BinaryInstruction],
     first_instr: BinaryInstruction,
-) -> (Block, usize) {
+) -> (CodeBlock, usize) {
     let idx = instructions
         .iter()
         .position(|ins| !matches!(ins.instr, Instruction::Int3))
         .unwrap_or(instructions.len());
 
-    let instructions = instructions[..idx].to_vec();
-
-    let block = Block {
+    let block = CodeBlock {
         addr: first_instr.addr,
-        size: instructions.iter().map(|i| i.len).sum(),
-        typ: BlockType::Filler,
-        ins: instructions,
+        size: block_size(&instructions[..idx]),
+        typ: CodeBlockType::Filler,
     };
     (block, idx)
 }
 
-// fn process_jump_table(
-//     mut addr: Addr,
-//     binary: &Binary<'_>,
-//     to_process: &mut Vec<(Addr, ToProcessType)>,
-// ) -> usize {
-//     let start_addr = addr;
-//     loop {
-//         let target = Addr(binary.sections.text.read_u32_le(addr));
-//         if !binary.sections.text.contains(target) {
-//             return usize::try_from(addr.0 - start_addr.0).unwrap();
-//         }
-//         to_process.push((target, ToProcessType::Known(BlockType::Jump)));
-//         addr += 4;
-//     }
-// }
-
-// fn derive_functions_from_data_objects(
-//     robjects: &[DataObject],
-//     result: &mut Vec<(Addr, ToProcessType)>,
-// ) {
-//     for obj in robjects {
-//         if let DataObjectKind::FunctionsRef(addr) = &obj.kind {
-//             result.push((*addr, ToProcessType::Known(BlockType::Function)));
-//         }
-//     }
-// }
+fn process_jump_table(addr: Addr, binary: &Binary<'_>) -> JumpTable {
+    let mut addr_counter = addr;
+    let mut jumps = vec![];
+    loop {
+        let target = Addr(binary.sections.text.read_u32_le(addr_counter));
+        if !binary.sections.text.contains(target) {
+            break JumpTable { addr, jumps };
+        }
+        jumps.push(target);
+        addr_counter += 4;
+    }
+}
 
 pub fn looks_like_jump_table(mem: &Mem) -> bool {
     !mem.is_base && mem.is_index && mem.scale == 4

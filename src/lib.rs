@@ -1,4 +1,5 @@
 pub mod addr;
+pub mod block_set;
 pub mod cfg;
 pub mod ins;
 pub mod new_cfg;

@@ -1,9 +1,15 @@
+use std::ops::Range;
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Addr(pub u32);
 
 impl Addr {
     pub fn from_u64_assert(addr: u64) -> Self {
         Self(addr.try_into().unwrap())
+    }
+
+    pub fn range_with_size_assert(self, range: usize) -> Range<Self> {
+        self..Self(self.0 + u32::try_from(range).unwrap())
     }
 }
 
