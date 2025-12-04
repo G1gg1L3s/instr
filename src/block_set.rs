@@ -90,21 +90,9 @@ impl BlockSet {
     /// Insert a block, removing/splitting any overlapping blocks.
     pub fn insert_clean(&mut self, new: Block) {
         let new_start = new.addr();
-        let new_end = Addr(new_start.0 + u32::try_from(new.size()).unwrap());
+        let new_end = new.end_addr();
 
-        // ---- Split left neighbor at new_start ----
-        if let Some(block) = self.covering_block(new_start) {
-            if block.addr() < new_start && block.contains(new_start) {
-                self.split_at(new_start);
-            }
-        }
-
-        // ---- Split right neighbor at new_end ----
-        if let Some(block) = self.covering_block(new_end) {
-            if block.addr() < new_end && block.contains(new_end) {
-                self.split_at(new_end);
-            }
-        }
+        self.split_range(new_start, new.size());
 
         // ---- Remove blocks fully inside the new block range ----
         let to_remove: Vec<Addr> = self
@@ -119,6 +107,33 @@ impl BlockSet {
 
         // ---- Insert the new block ----
         self.blocks.insert(new.addr(), new);
+    }
+
+    /// Ensures that the interval [start, end) is perfectly aligned in the BlockSet.
+    ///
+    /// This means:
+    /// - If a block crosses `start`, it is split at `start`
+    /// - If a block crosses `end`, it is split at `end`
+    ///
+    /// This keeps all data; no block is removed.
+    ///
+    /// Returns:
+    /// - (Option<&mut Block>, Option<&mut Block>)
+    ///     references to the RIGHT fragments created by splitting at start/end.
+    pub fn split_range(&mut self, start: Addr, size: usize) {
+        let end = start + u32::try_from(size).unwrap();
+
+        if let Some(block) = self.covering_block(start) {
+            if block.contains(start) && block.addr() != start {
+                self.split_at(start);
+            }
+        }
+
+        if let Some(block) = self.covering_block(end) {
+            if block.contains(end) && block.addr() != end {
+                self.split_at(end);
+            }
+        }
     }
 }
 

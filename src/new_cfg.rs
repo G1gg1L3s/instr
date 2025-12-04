@@ -35,8 +35,16 @@ pub struct JumpTableEntry {
 }
 
 impl Block {
+    pub fn new(addr: Addr, size: usize, typ: BlockType) -> Self {
+        Self { addr, size, typ }
+    }
+
     pub fn addr(&self) -> Addr {
         self.addr
+    }
+
+    pub fn end_addr(&self) -> Addr {
+        self.addr + u32::try_from(self.size).unwrap()
     }
 
     pub fn size(&self) -> usize {
@@ -94,11 +102,6 @@ pub fn cut_blocks_as_sausage(binary: &Binary<'_>) -> Vec<Block> {
 
     let (blocks, mut to_process) = cut_slice_of_instructions(binary, &instructions);
 
-    eprintln!(
-        ">> debug block: {:?}",
-        to_process.iter().find(|(addr, _)| *addr == Addr(0x422a45))
-    );
-
     let jump_tables = process_jump_tables(binary, &mut to_process);
 
     let blocks = process_blocks(binary, blocks, jump_tables, to_process);
@@ -138,7 +141,9 @@ fn process_blocks(
                 .map(|jump| (jump.target, ToProcessType::Jump)),
         );
 
-        blockset.insert_clean(jump_table);
+        blockset.split_range(jump_table.addr(), jump_table.size);
+        let table = blockset.split_at(jump_table.addr()).unwrap();
+        table.typ = BlockType::JumpTable;
     }
 
     while let Some((addr, to_process_type)) = to_process.pop() {
