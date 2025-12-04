@@ -136,25 +136,61 @@ pub fn cut_blocks_as_sausage(binary: &Binary<'_>) -> Vec<Block> {
     let mut instructions = Vec::with_capacity(2usize.pow(16));
     instructions.extend(decoder);
 
-    let (blocks, to_process) = cut_slice_of_instructions(binary, &instructions);
+    let (blocks, mut to_process) = cut_slice_of_instructions(binary, &instructions);
 
     eprintln!(
         ">> debug block: {:?}",
         to_process.iter().find(|(addr, _)| *addr == Addr(0x422a45))
     );
 
-    let blocks = process_blocks(binary, blocks, to_process);
+    let jump_tables = process_jump_tables(binary, &mut to_process);
+
+    let blocks = process_blocks(binary, blocks, jump_tables, to_process);
     blocks
+}
+
+fn process_jump_tables(
+    binary: &Binary<'_>,
+    to_process: &mut Vec<(Addr, ToProcessType)>,
+) -> Vec<JumpTable> {
+    let mut res = vec![];
+    for (addr, _) in to_process.extract_if(.., |(_, typ)| matches!(typ, ToProcessType::JumpTable)) {
+        let Some(jump_table) = process_jump_table(addr, binary) else {
+            continue;
+        };
+        res.push(jump_table);
+    }
+    res
 }
 
 fn process_blocks(
     binary: &Binary<'_>,
     blocks: Vec<CodeBlock>,
+    jump_tables: Vec<JumpTable>,
     mut to_process: Vec<(Addr, ToProcessType)>,
 ) -> Vec<Block> {
     let mut blockset = BlockSet::new();
     for block in blocks {
         blockset.insert_non_overlaping_unchecked(Block::Code(block));
+    }
+
+    for jump_table in jump_tables {
+        to_process.extend(
+            jump_table
+                .jumps
+                .iter()
+                .map(|jump| (*jump, ToProcessType::Jump)),
+        );
+
+        match blockset.remove_split(jump_table.addr, jump_table.size()) {
+            Ok(block) => {
+                assert!(block.size() >= jump_table.size());
+            }
+            Err(SplitError::OutOfRange) => {}
+            Err(SplitError::Unalighed) => panic!("unalighed jump table"),
+        }
+
+        blockset.insert_non_overlaping_unchecked(Block::JumpTable(jump_table));
     }
 
     while let Some((addr, to_process_type)) = to_process.pop() {
@@ -175,21 +211,7 @@ fn process_blocks(
                 }
             }
             ToProcessType::JumpTable => {
-                let mut jump_table = process_jump_table(addr, binary);
-                to_process.extend(
-                    jump_table
-                        .jumps
-                        .iter()
-                        .map(|jump| (*jump, ToProcessType::Jump)),
-                );
-
-                match blockset.remove_split(jump_table.addr, jump_table.size()) {
-                    Ok(block) => jump_table.truncate(block.size()),
-                    Err(SplitError::OutOfRange) => {}
-                    Err(SplitError::Unalighed) => panic!("unalighed jump table"),
-                }
-
-                blockset.insert_non_overlaping_unchecked(Block::JumpTable(jump_table));
+                unreachable!()
             }
         }
     }
@@ -317,16 +339,22 @@ fn cut_filler(
     (block, idx)
 }
 
-fn process_jump_table(addr: Addr, binary: &Binary<'_>) -> JumpTable {
+fn process_jump_table(addr: Addr, binary: &Binary<'_>) -> Option<JumpTable> {
     let mut addr_counter = addr;
     let mut jumps = vec![];
     loop {
         let target = Addr(binary.sections.text.read_u32_le(addr_counter));
         if !binary.sections.text.contains(target) {
-            break JumpTable { addr, jumps };
+            break;
         }
         jumps.push(target);
         addr_counter += 4;
+    }
+
+    if jumps.len() >= 3 {
+        Some(JumpTable { addr, jumps })
+    } else {
+        None
     }
 }
 
