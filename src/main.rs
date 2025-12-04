@@ -5,7 +5,7 @@ use instr::{
     addr::Addr,
     ins::{Instruction, parse_instruction},
     instruction_signature, instruction_signature_full,
-    new_cfg::{Block, CodeBlockType},
+    new_cfg::{Block, BlockType},
     parse_binary,
 };
 
@@ -22,14 +22,12 @@ fn count_blocks<'a>(iter: impl Iterator<Item = &'a Block>) -> CountBlocks {
     let mut filler = 0;
     let mut jump_table = 0;
     for block in iter {
-        match block {
-            Block::Code(code_block) => match code_block.typ {
-                CodeBlockType::Function => funcs += 1,
-                CodeBlockType::Entry => funcs += 1,
-                CodeBlockType::Jump => jumps += 1,
-                CodeBlockType::Filler => filler += 1,
-            },
-            Block::JumpTable(_) => jump_table += 1,
+        match block.typ() {
+            BlockType::Function => funcs += 1,
+            BlockType::Entry => funcs += 1,
+            BlockType::Jump => jumps += 1,
+            BlockType::Filler => filler += 1,
+            BlockType::JumpTable => jump_table += 1,
         }
     }
     CountBlocks {
@@ -80,22 +78,28 @@ fn main() {
         let size = block.size();
         last_addr_end = block.addr() + block.size() as u32;
 
-        match block {
-            Block::Code(code_block) => {
-                match code_block.typ {
-                    CodeBlockType::Entry => println!("_start ({size}):"),
-                    CodeBlockType::Function => println!("_func_{:x} ({size}):", addr.0),
-                    CodeBlockType::Jump => println!("_jump_{:x} ({size}):", addr.0),
-                    CodeBlockType::Filler => println!("_filler_{:x} ({size}):", addr.0),
-                }
+        match block.typ() {
+            BlockType::Entry => {
+                println!("_start ({size}):");
                 print_asm(&binary, addr, size, Some(&mut unique_instructions));
             }
-            Block::JumpTable(jump_table) => {
-                println!("_jump_table_{:x} ({}):", jump_table.addr.0, size);
-                let mut line_addr = addr;
-                for target in &jump_table.jumps {
-                    println!("   - {line_addr} -> {target}");
-                    line_addr += 4;
+            BlockType::Function => {
+                println!("_func_{:x} ({size}):", addr.0);
+                print_asm(&binary, addr, size, Some(&mut unique_instructions));
+            }
+            BlockType::Jump => {
+                println!("_jump_{:x} ({size}):", addr.0);
+                print_asm(&binary, addr, size, Some(&mut unique_instructions));
+            }
+            BlockType::Filler => {
+                println!("_filler_{:x} ({size}):", addr.0);
+                print_asm(&binary, addr, size, Some(&mut unique_instructions));
+            }
+
+            BlockType::JumpTable => {
+                println!("_jump_table_{:x} ({}):", addr.0, size);
+                for entry in block.jump_targets(&binary).unwrap() {
+                    println!("   - {} -> {}", entry.addr, entry.target);
                 }
             }
         }

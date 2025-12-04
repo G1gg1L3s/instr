@@ -1,9 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{
-    addr::Addr,
-    new_cfg::{Block, CodeBlockType},
-};
+use crate::{addr::Addr, new_cfg::Block};
 
 #[derive(Debug)]
 pub struct BlockSet {
@@ -31,88 +28,97 @@ impl BlockSet {
         self.blocks.insert(block.addr(), block);
     }
 
-    pub fn get_split(
-        &mut self,
-        addr: Addr,
-        new_type: CodeBlockType,
-    ) -> Result<&mut Block, SplitError> {
-        let target_addr = self.find_block_with_addr(addr)?;
-        if target_addr == addr {
-            return Ok(self.blocks.get_mut(&addr).unwrap());
-        }
-
-        let block = self.blocks.remove(&target_addr).unwrap();
-
-        let (left, right) = self.split_block_or_insert_back(addr, block, new_type)?;
-
-        let addr = right.addr();
-        self.blocks.insert(left.addr(), left);
-        self.blocks.insert(addr, right);
-
-        Ok(self.blocks.get_mut(&addr).unwrap())
+    /// Insert without any checks -- caller must ensure correctness.
+    pub fn insert_unchecked(&mut self, block: Block) {
+        self.blocks.insert(block.addr(), block);
     }
 
-    fn split_block_or_insert_back(
-        &mut self,
-        addr: Addr,
-        block: Block,
-        new_type: CodeBlockType,
-    ) -> Result<(Block, Block), SplitError> {
-        match block.split(addr, new_type) {
-            Ok((left, right)) => Ok((left, right)),
-            Err(block) => {
-                self.blocks.insert(block.addr(), block);
-                return Err(SplitError::Unalighed);
+    /// Return immutable covering block
+    fn covering_block(&self, addr: Addr) -> Option<&Block> {
+        let (_, block) = self.blocks.range(..=addr).next_back()?;
+        if block.contains(addr) {
+            Some(block)
+        } else {
+            None
+        }
+    }
+
+    /// Return mutable covering block
+    fn covering_block_mut<'a>(&'a mut self, addr: Addr) -> Option<(Addr, &'a mut Block)> {
+        let key = {
+            let (start, block) = self.blocks.range(..=addr).next_back()?;
+            if block.contains(addr) {
+                *start
+            } else {
+                return None;
+            }
+        };
+        let block = self.blocks.get_mut(&key).unwrap();
+        Some((key, block))
+    }
+
+    /// Split the block that contains `addr`.
+    ///
+    /// - If no block covers it → None
+    /// - If addr == block.start → no split → None
+    /// - Otherwise splits using Block::split()
+    ///
+    /// On success returns mutable reference to the NEW right block.
+    pub fn split_at<'a>(&'a mut self, addr: Addr) -> Option<&'a mut Block> {
+        let (start_addr, old_block) = self.covering_block_mut(addr)?;
+
+        if addr == old_block.addr() {
+            return self.blocks.get_mut(&start_addr);
+        }
+
+        let old_block_copy = *old_block; // we must own it because split() consumes self
+
+        // Remove original block
+        self.blocks.remove(&start_addr).unwrap();
+
+        // Use Block::split()
+        let (left, right) = old_block_copy.split(addr, old_block_copy.typ()).unwrap();
+
+        // Insert both halves
+        self.blocks.insert(left.addr(), left);
+        self.blocks.insert(right.addr(), right);
+
+        // Return mutable reference to right block
+        self.blocks.get_mut(&addr)
+    }
+
+    /// Insert a block, removing/splitting any overlapping blocks.
+    pub fn insert_clean(&mut self, new: Block) {
+        let new_start = new.addr();
+        let new_end = Addr(new_start.0 + u32::try_from(new.size()).unwrap());
+
+        // ---- Split left neighbor at new_start ----
+        if let Some(block) = self.covering_block(new_start) {
+            if block.addr() < new_start && block.contains(new_start) {
+                self.split_at(new_start);
             }
         }
-    }
 
-    pub fn remove_split(&mut self, addr: Addr, size: usize) -> Result<Block, SplitError> {
-        let block_addr = self.find_block_with_addr(addr)?;
-        let mut block = self.blocks.remove(&block_addr).unwrap();
-        let typ = if let Block::Code(code) = &block {
-            code.typ
-        } else {
-            CodeBlockType::Filler
-        };
-
-        let block_end = block.addr() + u32::try_from(block.size()).unwrap();
-        let mut requested_end = addr + u32::try_from(size).unwrap();
-
-        if block_end < requested_end {
-            requested_end = block_end;
+        // ---- Split right neighbor at new_end ----
+        if let Some(block) = self.covering_block(new_end) {
+            if block.addr() < new_end && block.contains(new_end) {
+                self.split_at(new_end);
+            }
         }
 
-        if block_addr < addr {
-            let (left, right) = self.split_block_or_insert_back(addr, block, typ)?;
-            self.blocks.insert(left.addr(), left);
-            block = right;
-        }
-
-        if requested_end < block_end {
-            let (left, right) = self.split_block_or_insert_back(requested_end, block, typ)?;
-            self.blocks.insert(right.addr(), right);
-            block = left;
-        }
-
-        Ok(block)
-    }
-
-    fn find_block_with_addr(&mut self, addr: Addr) -> Result<Addr, SplitError> {
-        let (target_addr, target) = self
+        // ---- Remove blocks fully inside the new block range ----
+        let to_remove: Vec<Addr> = self
             .blocks
-            .range(..=addr)
-            .next_back()
-            .ok_or(SplitError::OutOfRange)?;
-        if *target_addr == addr {
-            return Ok(addr);
+            .range(new_start..new_end)
+            .map(|(k, _)| *k)
+            .collect();
+
+        for k in to_remove {
+            self.blocks.remove(&k);
         }
 
-        if target.contains(addr) {
-            Ok(*target_addr)
-        } else {
-            Err(SplitError::OutOfRange)
-        }
+        // ---- Insert the new block ----
+        self.blocks.insert(new.addr(), new);
     }
 }
 
