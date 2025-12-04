@@ -1,244 +1,315 @@
-use std::{collections::BTreeMap, ops::Range};
-
 use crate::{
-    Binary, DataObject, DataObjectKind,
+    Binary,
     addr::Addr,
-    ins::{self, Mem, Op},
+    block_set::BlockSet,
+    ins::{self, BinaryInstruction, Instruction, Mem, Op},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockType {
-    Entry,
     Function,
+    Entry,
+    Jump,
+    Filler,
+    JumpTable,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ToProcessType {
+    Call,
     Jump,
     Indirect,
     JumpTable,
 }
 
-enum ToProcessType {
-    Code(BlockType),
-    JumpTable,
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct Block {
-    pub typ: BlockType,
-    pub size: Option<usize>,
+    addr: Addr,
+    size: usize,
+    typ: BlockType,
+}
+
+pub struct JumpTableEntry {
+    pub addr: Addr,
+    pub target: Addr,
 }
 
 impl Block {
-    pub fn size_u32_assert(&self) -> u32 {
-        self.size.unwrap_or(0).try_into().unwrap()
+    pub fn new(addr: Addr, size: usize, typ: BlockType) -> Self {
+        Self { addr, size, typ }
     }
-}
 
-pub fn derive_blocks(binary: &Binary<'_>) -> BTreeMap<Addr, Block> {
-    let mut to_process = Vec::with_capacity(64_000);
-    derive_functions_from_data_objects(&binary.rdata_objects, &mut to_process);
-    derive_functions_from_data_objects(&binary.data_objects, &mut to_process);
-    to_process.push((binary.entry_point, ToProcessType::Code(BlockType::Entry)));
+    pub fn addr(&self) -> Addr {
+        self.addr
+    }
 
-    let mut processed = BTreeMap::<Addr, Block>::new();
+    pub fn end_addr(&self) -> Addr {
+        self.addr + u32::try_from(self.size).unwrap()
+    }
 
-    while let Some((addr, block_type)) = to_process.pop() {
-        if processed.contains_key(&addr) {
-            continue;
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn typ(&self) -> BlockType {
+        self.typ
+    }
+
+    pub fn split(mut self, addr: Addr, new_type: BlockType) -> Result<(Self, Self), Self> {
+        let left_size = addr.0.checked_sub(self.addr.0).unwrap();
+        let left_size = usize::try_from(left_size).unwrap();
+        let right_size = self.size - left_size;
+        self.size = left_size;
+        Ok((
+            self,
+            Block {
+                addr,
+                size: right_size,
+                typ: new_type,
+            },
+        ))
+    }
+
+    pub fn contains(&self, addr: Addr) -> bool {
+        let end = self.addr + u32::try_from(self.size).unwrap();
+        (self.addr..end).contains(&addr)
+    }
+
+    pub fn jump_targets(
+        &self,
+        binary: &Binary<'_>,
+    ) -> Option<impl Iterator<Item = JumpTableEntry>> {
+        if self.typ != BlockType::JumpTable {
+            return None;
         }
 
-        match block_type {
-            ToProcessType::Code(block_type) => {
-                let size = if binary.sections.text.contains(addr) {
-                    let code = binary.sections.text.slice_to_end(addr);
-                    let size = derive_blocks_from_function(code, addr, binary, &mut to_process);
-                    Some(size)
-                } else {
-                    None
-                };
+        let slice = binary.sections.text.slice(self.addr, self.size);
+        let (chunks, _) = slice.as_chunks::<4>();
 
-                processed.insert(
-                    addr,
-                    Block {
-                        typ: block_type,
-                        size,
-                    },
-                );
-            }
-            ToProcessType::JumpTable => {
-                let size = process_jump_table(addr, binary, &mut to_process);
-                if size != 0 {
-                    processed.insert(
-                        addr,
-                        Block {
-                            typ: BlockType::JumpTable,
-                            size: Some(size),
-                        },
-                    );
-                }
-            }
-        }
-    }
-
-    normalise(processed)
-}
-
-struct NormaliseOverlap {
-    blocks: [Range<Addr>; 3],
-}
-
-fn normalise_overlap(block1: Range<Addr>, block2: Range<Addr>) -> Option<NormaliseOverlap> {
-    if are_overlapping(&block1, &block2) {
-        let mut values = [block1.start, block1.end, block2.start, block2.end];
-        values.sort();
-
-        Some(NormaliseOverlap {
-            blocks: [
-                values[0]..values[1],
-                values[1]..values[2],
-                values[2]..values[3],
-            ],
-        })
-    } else {
-        None
+        Some(chunks.iter().enumerate().map(|(i, chunk)| {
+            let u32 = u32::from_le_bytes(*chunk);
+            let target = Addr(u32);
+            let addr = self.addr + u32::try_from(i).unwrap() * 4;
+            JumpTableEntry { addr, target }
+        }))
     }
 }
 
-fn are_overlapping(block1: &Range<Addr>, block2: &Range<Addr>) -> bool {
-    block1.start < block2.end && block2.start < block1.end
+pub fn cut_blocks_as_sausage(binary: &Binary<'_>) -> Vec<Block> {
+    let decoder = ins::Decoder::new(binary.sections.text.data, binary.sections.text.address);
+    let mut instructions = Vec::with_capacity(2usize.pow(16));
+    instructions.extend(decoder);
+
+    let (blocks, mut to_process) = cut_slice_of_instructions(binary, &instructions);
+
+    let jump_tables = process_jump_tables(binary, &mut to_process);
+
+    let blocks = process_blocks(binary, blocks, jump_tables, to_process);
+    blocks
 }
 
-fn normalise(mut blocks: BTreeMap<Addr, Block>) -> BTreeMap<Addr, Block> {
-    let mut new = BTreeMap::new();
-
-    let Some((mut prev_addr, mut prev_block)) = blocks.pop_first() else {
-        return new;
-    };
-
-    for (next_addr, next_block) in blocks {
-        let prev_range = prev_addr..(prev_addr + prev_block.size_u32_assert());
-        let next_range = next_addr..(next_addr + next_block.size_u32_assert());
-
-        if let Some(normalised) = normalise_overlap(prev_range, next_range) {
-            for (i, normalised_block) in normalised
-                .blocks
-                .into_iter()
-                .filter(|block| !block.is_empty())
-                .enumerate()
-            {
-                let size = normalised_block.end.0 - normalised_block.start.0;
-                let block = Block {
-                    typ: if i == 0 {
-                        prev_block.typ
-                    } else {
-                        BlockType::Jump
-                    },
-                    size: Some(usize::try_from(size).unwrap()),
-                };
-                new.insert(normalised_block.start, block);
-
-                prev_addr = normalised_block.start;
-                prev_block = block;
-            }
-        } else {
-            new.insert(prev_addr, prev_block);
-            prev_addr = next_addr;
-            prev_block = next_block;
-        }
-    }
-
-    new
-}
-
-fn derive_blocks_from_function(
-    code: &[u8],
-    addr: Addr,
+fn process_jump_tables(
     binary: &Binary<'_>,
     to_process: &mut Vec<(Addr, ToProcessType)>,
-) -> usize {
-    let mut decoder = ins::Decoder::new(code, addr);
+) -> Vec<Block> {
+    let mut res = vec![];
+    for (addr, _) in to_process.extract_if(.., |(_, typ)| matches!(typ, ToProcessType::JumpTable)) {
+        let Some(jump_table) = process_jump_table(addr, binary) else {
+            continue;
+        };
+        res.push(jump_table);
+    }
+    res
+}
 
-    for ins in &mut decoder {
+fn process_blocks(
+    binary: &Binary<'_>,
+    blocks: Vec<Block>,
+    jump_tables: Vec<Block>,
+    mut to_process: Vec<(Addr, ToProcessType)>,
+) -> Vec<Block> {
+    let mut blockset = BlockSet::new();
+    for block in blocks {
+        blockset.insert_non_overlaping_unchecked(block);
+    }
+
+    for jump_table in jump_tables {
+        to_process.extend(
+            jump_table
+                .jump_targets(binary)
+                .unwrap()
+                .map(|jump| (jump.target, ToProcessType::Jump)),
+        );
+
+        blockset.split_range(jump_table.addr(), jump_table.size);
+        let table = blockset.split_at(jump_table.addr()).unwrap();
+        table.typ = BlockType::JumpTable;
+    }
+
+    while let Some((addr, to_process_type)) = to_process.pop() {
+        match to_process_type {
+            ToProcessType::Call | ToProcessType::Jump | ToProcessType::Indirect => {
+                let Some(block) = blockset.split_at(addr) else {
+                    continue;
+                };
+
+                block.typ = BlockType::Filler;
+                match to_process_type {
+                    ToProcessType::Call | ToProcessType::Indirect => {
+                        block.typ = BlockType::Function
+                    }
+                    ToProcessType::Jump => block.typ = BlockType::Jump,
+                    ToProcessType::JumpTable => unreachable!(),
+                }
+            }
+            ToProcessType::JumpTable => {
+                unreachable!()
+            }
+        }
+    }
+
+    blockset.into_iter().collect()
+}
+
+fn cut_slice_of_instructions(
+    binary: &Binary<'_>,
+    mut instructions: &[BinaryInstruction],
+) -> (Vec<Block>, Vec<(Addr, ToProcessType)>) {
+    let mut res = vec![];
+    let mut to_process = vec![];
+
+    while let Some((block, index)) = cut_block(binary, instructions, &mut to_process) {
+        instructions = &instructions[index..];
+        res.push(block);
+    }
+
+    (res, to_process)
+}
+
+fn cut_block(
+    binary: &Binary<'_>,
+    instructions: &[BinaryInstruction],
+    to_process: &mut Vec<(Addr, ToProcessType)>,
+) -> Option<(Block, usize)> {
+    let first_instr = instructions.first().copied()?;
+
+    if let Instruction::Int3 = first_instr.instr {
+        return Some(cut_filler(instructions, first_instr));
+    }
+
+    let index = process_function_till_the_end_of_block(binary, instructions, to_process);
+    let block = Block {
+        addr: first_instr.addr,
+        size: block_size(&instructions[..index]),
+        typ: BlockType::Jump,
+    };
+
+    Some((block, index))
+}
+
+fn block_size(instructions: &[BinaryInstruction]) -> usize {
+    instructions.iter().map(|i| i.len).sum()
+}
+
+fn process_function_till_the_end_of_block(
+    binary: &Binary<'_>,
+    instructions: &[BinaryInstruction],
+    to_process: &mut Vec<(Addr, ToProcessType)>,
+) -> usize {
+    let mut len = 0;
+    for ins in instructions {
+        len += 1;
+
         match ins.instr {
             ins::Instruction::CallNear(addr) => {
-                to_process.push((addr, ToProcessType::Code(BlockType::Function)));
+                to_process.push((addr, ToProcessType::Call));
             }
-            ins::Instruction::CallMem(addr) => {
-                to_process.push((addr, ToProcessType::Code(BlockType::Function)));
+            ins::Instruction::CallMem(_addr) => {
+                // TODO
             }
-            // End of block
-            ins::Instruction::Return(_) => return decoder.position(),
+            ins::Instruction::Return(_) => break,
             ins::Instruction::Jump(Op::Addr(addr)) => {
-                to_process.push((addr, ToProcessType::Code(BlockType::Jump)));
-                return decoder.position();
+                to_process.push((addr, ToProcessType::Jump));
+                break;
             }
             ins::Instruction::Jump(Op::Mem(mem)) => {
                 if looks_like_jump_table(&mem) && binary.sections.text.contains(Addr(mem.disp)) {
                     to_process.push((Addr(mem.disp), ToProcessType::JumpTable));
                 }
 
-                return decoder.position();
+                break;
             }
             ins::Instruction::JumpConditional(Op::Addr(addr), _) => {
-                to_process.push((addr, ToProcessType::Code(BlockType::Jump)));
-                to_process.push((decoder.address(), ToProcessType::Code(BlockType::Jump)));
-                return decoder.position();
+                to_process.push((addr, ToProcessType::Jump));
             }
             ins::Instruction::JumpConditional(Op::Mem(mem), _) => {
                 if looks_like_jump_table(&mem) && binary.sections.text.contains(Addr(mem.disp)) {
                     to_process.push((Addr(mem.disp), ToProcessType::JumpTable));
                 }
-                return decoder.position();
             }
             ins::Instruction::Loop(addr) => {
-                to_process.push((addr, ToProcessType::Code(BlockType::Jump)));
-                to_process.push((decoder.address(), ToProcessType::Code(BlockType::Jump)));
-                return decoder.position();
+                to_process.push((addr, ToProcessType::Jump));
             }
             ins::Instruction::PushImm(imm) => {
                 if binary.sections.text.contains(Addr(imm)) {
-                    to_process.push((Addr(imm), ToProcessType::Code(BlockType::Indirect)));
+                    to_process.push((Addr(imm), ToProcessType::Indirect));
                 }
             }
             ins::Instruction::MovImm(imm) => {
                 if let Ok(imm) = imm.try_into() {
                     let addr = Addr(imm);
                     if binary.sections.text.contains(addr) {
-                        to_process.push((addr, ToProcessType::Code(BlockType::Indirect)));
+                        to_process.push((addr, ToProcessType::Indirect));
                     }
                 }
             }
             ins::Instruction::Int3 => {
-                return decoder.position();
+                // Go back 1 instruction
+                len -= 1;
             }
             ins::Instruction::IcedX86 => {}
         }
     }
-    decoder.position()
+
+    len
 }
 
-fn process_jump_table(
-    mut addr: Addr,
-    binary: &Binary<'_>,
-    to_process: &mut Vec<(Addr, ToProcessType)>,
-) -> usize {
-    let start_addr = addr;
+fn cut_filler(
+    instructions: &[BinaryInstruction],
+    first_instr: BinaryInstruction,
+) -> (Block, usize) {
+    let idx = instructions
+        .iter()
+        .position(|ins| !matches!(ins.instr, Instruction::Int3))
+        .unwrap_or(instructions.len());
+
+    let block = Block {
+        addr: first_instr.addr,
+        size: block_size(&instructions[..idx]),
+        typ: BlockType::Filler,
+    };
+    (block, idx)
+}
+
+fn process_jump_table(addr: Addr, binary: &Binary<'_>) -> Option<Block> {
+    let mut i = 0;
     loop {
-        let target = Addr(binary.sections.text.read_u32_le(addr));
+        let addr_counter = addr + i * 4;
+        let target = Addr(binary.sections.text.read_u32_le(addr_counter));
         if !binary.sections.text.contains(target) {
-            return usize::try_from(addr.0 - start_addr.0).unwrap();
+            break;
         }
-        to_process.push((target, ToProcessType::Code(BlockType::Jump)));
-        addr += 4;
+        i += 1;
     }
-}
 
-fn derive_functions_from_data_objects(
-    robjects: &[DataObject],
-    result: &mut Vec<(Addr, ToProcessType)>,
-) {
-    for obj in robjects {
-        if let DataObjectKind::FunctionsRef(addr) = &obj.kind {
-            result.push((*addr, ToProcessType::Code(BlockType::Function)));
-        }
+    if i >= 3 {
+        Some(Block {
+            addr,
+            size: usize::try_from(i).unwrap() * 4,
+            typ: BlockType::JumpTable,
+        })
+    } else {
+        None
     }
 }
 

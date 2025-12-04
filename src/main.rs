@@ -3,10 +3,9 @@ use std::collections::BTreeSet;
 use iced_x86::Decoder;
 use instr::{
     addr::Addr,
+    cfg::{Block, BlockType},
     ins::{Instruction, parse_instruction},
-    instruction_signature, instruction_signature_full,
-    new_cfg::{Block, BlockType},
-    parse_binary,
+    instruction_signature, instruction_signature_full, parse_binary,
 };
 
 struct CountBlocks {
@@ -48,7 +47,7 @@ fn main() {
         binary.entry_point, binary.sections
     );
 
-    let blocks = instr::new_cfg::cut_blocks_as_sausage(&binary);
+    let blocks = instr::cfg::cut_blocks_as_sausage(&binary);
     let count = count_blocks(blocks.iter());
 
     println!(

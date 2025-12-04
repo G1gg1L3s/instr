@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{addr::Addr, new_cfg::Block};
+use crate::{addr::Addr, cfg::Block};
 
 #[derive(Debug)]
 pub struct BlockSet {
