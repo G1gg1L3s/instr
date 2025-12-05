@@ -20,6 +20,7 @@ enum ToProcessType {
     Jump,
     Indirect,
     JumpTable,
+    Entry,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -107,6 +108,7 @@ pub fn cut_blocks_as_sausage(binary: &Binary<'_>) -> Vec<Block> {
     let (blocks, mut to_process) = cut_slice_of_instructions(binary, &instructions);
 
     let jump_tables = process_jump_tables(binary, &mut to_process);
+    to_process.push((binary.entry_point, ToProcessType::Entry));
 
     let blocks = process_blocks(binary, blocks, jump_tables, to_process);
     blocks
@@ -152,7 +154,10 @@ fn process_blocks(
 
     while let Some((addr, to_process_type)) = to_process.pop() {
         match to_process_type {
-            ToProcessType::Call | ToProcessType::Jump | ToProcessType::Indirect => {
+            ToProcessType::Call
+            | ToProcessType::Jump
+            | ToProcessType::Indirect
+            | ToProcessType::Entry => {
                 let Some(block) = blockset.split_at(addr) else {
                     continue;
                 };
@@ -163,6 +168,7 @@ fn process_blocks(
                         block.typ = BlockType::Function
                     }
                     ToProcessType::Jump => block.typ = BlockType::Jump,
+                    ToProcessType::Entry => block.typ = BlockType::Entry,
                     ToProcessType::JumpTable => unreachable!(),
                 }
             }
