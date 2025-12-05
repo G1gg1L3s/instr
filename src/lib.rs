@@ -1,6 +1,7 @@
 pub mod addr;
 pub mod block_set;
 pub mod cfg;
+pub mod cfg_func;
 pub mod ins;
 
 use std::borrow::Cow;

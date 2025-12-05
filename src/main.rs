@@ -47,9 +47,21 @@ fn main() {
         binary.entry_point, binary.sections
     );
 
-    let blocks = instr::cfg::cut_blocks_as_sausage(&binary);
-    let count = count_blocks(blocks.iter());
+    let mut blocks = instr::cfg::cut_blocks_as_sausage(&binary);
 
+    eprintln!(">> Promoting function based on .rdata");
+    instr::cfg_func::promote_functions_based_on_object_function_refs(
+        &binary.rdata_objects,
+        &mut blocks,
+    );
+    eprintln!(">> Promoting function based on .data");
+    instr::cfg_func::promote_functions_based_on_object_function_refs(
+        &binary.data_objects,
+        &mut blocks,
+    );
+    instr::cfg_func::promote_functions_based_on_fillers(&mut blocks);
+
+    let count = count_blocks(blocks.iter());
     println!(
         "Total {} blocks ({} funcs, {} jumps, {} fillers, {} jump tables)",
         blocks.len(),

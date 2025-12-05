@@ -55,6 +55,10 @@ impl Block {
         self.typ
     }
 
+    pub fn set_typ(&mut self, typ: BlockType) {
+        self.typ = typ;
+    }
+
     pub fn split(mut self, addr: Addr, new_type: BlockType) -> Result<(Self, Self), Self> {
         let left_size = addr.0.checked_sub(self.addr.0).unwrap();
         let left_size = usize::try_from(left_size).unwrap();
@@ -216,6 +220,10 @@ fn process_function_till_the_end_of_block(
     instructions: &[BinaryInstruction],
     to_process: &mut Vec<(Addr, ToProcessType)>,
 ) -> usize {
+    if instructions[0].addr == Addr(0x404360) {
+        eprintln!("processing 0x404360");
+    }
+
     let mut len = 0;
     for ins in instructions {
         len += 1;
@@ -266,6 +274,7 @@ fn process_function_till_the_end_of_block(
             ins::Instruction::Int3 => {
                 // Go back 1 instruction
                 len -= 1;
+                break;
             }
             ins::Instruction::IcedX86 => {}
         }
