@@ -4,6 +4,7 @@ use iced_x86::Decoder;
 use instr::{
     addr::Addr,
     cfg::{Block, BlockType},
+    cfg_func::GraphFunctionCollector,
     ins::{Instruction, parse_instruction},
     instruction_signature, instruction_signature_full, parse_binary,
 };
@@ -60,6 +61,12 @@ fn main() {
         &mut blocks,
     );
     instr::cfg_func::promote_functions_based_on_fillers(&mut blocks);
+
+    let mut graph_collector = GraphFunctionCollector::with_capacity(blocks.len());
+    graph_collector.insert_nodes(&blocks);
+    graph_collector.insert_edges(&binary, &blocks);
+    eprintln!(">> Promoting functions based on call graph and tail calls");
+    graph_collector.promote_functions_based_on_tail_calls(&mut blocks);
 
     let count = count_blocks(blocks.iter());
     println!(
