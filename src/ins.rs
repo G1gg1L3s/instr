@@ -77,6 +77,7 @@ pub enum Instruction {
     PushImm(u32),
     MovImm(u64),
     Int3,
+    Invalid,
     IcedX86,
 }
 
@@ -237,6 +238,7 @@ pub fn parse_instruction(instr: &iced_x86::Instruction) -> Instruction {
         Mnemonic::Push => parse_push(instr).unwrap_or(default),
         Mnemonic::Mov => parse_mov(instr).unwrap_or(default),
         Mnemonic::Int3 => Instruction::Int3,
+        Mnemonic::INVALID => Instruction::Invalid,
         _ => default,
     }
 }

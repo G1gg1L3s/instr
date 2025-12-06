@@ -183,6 +183,7 @@ impl GraphFunctionCollector {
                     }
                 }
                 Ins::Int3 => return EndFlowType::Break,
+                Ins::Invalid => return EndFlowType::Break,
                 _ => {}
             }
         }

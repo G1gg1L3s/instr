@@ -282,6 +282,9 @@ fn process_function_till_the_end_of_block(
                 len -= 1;
                 break;
             }
+            ins::Instruction::Invalid => {
+                break;
+            }
             ins::Instruction::IcedX86 => {}
         }
     }
