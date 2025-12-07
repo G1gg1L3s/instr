@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
+
 use crate::{
-    Binary,
+    Binary, SectionData,
     addr::Addr,
     block_set::BlockSet,
     ins::{self, BinaryInstruction, Instruction, Mem, Op},
+    obj::{ObjDatabase, ObjectTyp},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,7 +19,7 @@ pub enum BlockType {
 
 #[derive(Debug, Clone, Copy)]
 enum ToProcessType {
-    Call,
+    Func,
     Jump,
     Indirect,
     JumpTable,
@@ -154,7 +157,7 @@ fn process_blocks(
 
     while let Some((addr, to_process_type)) = to_process.pop() {
         match to_process_type {
-            ToProcessType::Call
+            ToProcessType::Func
             | ToProcessType::Jump
             | ToProcessType::Indirect
             | ToProcessType::Entry => {
@@ -164,7 +167,7 @@ fn process_blocks(
 
                 block.typ = BlockType::Filler;
                 match to_process_type {
-                    ToProcessType::Call | ToProcessType::Indirect => {
+                    ToProcessType::Func | ToProcessType::Indirect => {
                         block.typ = BlockType::Function
                     }
                     ToProcessType::Jump => block.typ = BlockType::Jump,
@@ -236,7 +239,7 @@ fn process_function_till_the_end_of_block(
 
         match ins.instr {
             ins::Instruction::Call(Op::Addr(addr)) => {
-                to_process.push((addr, ToProcessType::Call));
+                to_process.push((addr, ToProcessType::Func));
             }
             ins::Instruction::Call(Op::Mem(_mem)) => {
                 // TODO
@@ -310,7 +313,7 @@ fn cut_filler(
 }
 
 fn process_jump_table(addr: Addr, binary: &Binary<'_>) -> Option<Block> {
-    let mut i = 0;
+    let mut i = 0u32;
     loop {
         let addr_counter = addr + i * 4;
         let target = Addr(binary.sections.text.read_u32_le(addr_counter));

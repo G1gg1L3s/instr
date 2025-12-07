@@ -4,10 +4,10 @@ use iced_x86::Decoder;
 use instr::{
     SectionData,
     addr::Addr,
-    cfg::{Block, BlockType},
+    cfg::{self, Block, BlockType},
     cfg_func::GraphFunctionCollector,
     ins::{Instruction, Op, parse_instruction},
-    instruction_signature, instruction_signature_full,
+    instruction_signature, instruction_signature_full, new_cfg,
     obj::{self, ObjDatabase, Object, ObjectTyp},
     parse_binary,
 };
@@ -80,33 +80,57 @@ fn main() {
         binary.entry_point, binary.sections
     );
 
-    let mut database = obj::ObjDatabase::new();
+    let mut db = obj::ObjDatabase::new();
     let data_strings = instr::string::collect_data_strings(binary.sections.data);
     let rdata_strings = instr::string::collect_data_strings(binary.sections.rdata);
 
     for string in data_strings.into_iter().chain(rdata_strings) {
-        database.insert(Object::new(string.addr, ObjectTyp::String(string.typ)));
+        db.insert(Object::new(string.addr, ObjectTyp::String(string.typ)));
     }
     for lib in &binary.imports {
-        obj::fill_database_with_import(&mut database, lib);
+        obj::fill_database_with_import(&mut db, lib);
+    }
+
+    let funcs_from_start = new_cfg::walk_code_blocks(&db, binary.sections.text, binary.entry_point);
+
+    println!(".text:");
+
+    let mut printer = PrinterOfSkipped::with_addr(
+        binary.sections.text,
+        *funcs_from_start.first_key_value().unwrap().0,
+    );
+    for (func_addr, func) in funcs_from_start {
+        printer.print_skipped(func_addr);
+
+        if func_addr == binary.entry_point {
+            println!("_start:");
+        } else {
+            println!("_block_{}:", func_addr);
+        }
+        print_asm(&binary, &db, func.addr(), func.len(), None);
+        println!();
+        printer.advance(func.addr(), func.len());
     }
 
     println!(".rdata:");
     let mut printer = PrinterOfSkipped::new(binary.sections.rdata);
-    for obj in database.range(binary.sections.rdata.to_range()) {
+    for obj in db.range(binary.sections.rdata.to_range()) {
         printer.print_skipped(obj.addr());
         println!("    {} {:?}", obj.addr(), obj.typ());
         printer.advance(obj.addr(), obj.len());
     }
+    printer.print_skipped(binary.sections.rdata.end());
 
     println!(".data:");
     let mut printer = PrinterOfSkipped::new(binary.sections.data);
-    for obj in database.range(binary.sections.data.to_range()) {
+    for obj in db.range(binary.sections.data.to_range()) {
         printer.print_skipped(obj.addr());
         println!("    {} {:?}", obj.addr(), obj.typ());
         printer.advance(obj.addr(), obj.len());
     }
+    printer.print_skipped(binary.sections.data.end());
 
+    return;
     let mut blocks = instr::cfg::cut_blocks_as_sausage(&binary);
 
     eprintln!(">> Promoting function based on .rdata");
@@ -149,7 +173,7 @@ fn main() {
                 println!("_skipped {} bytes:", skipped);
                 print_asm(
                     &binary,
-                    &database,
+                    &db,
                     last_addr_end,
                     skipped.try_into().unwrap(),
                     None,
@@ -165,43 +189,19 @@ fn main() {
         match block.typ() {
             BlockType::Entry => {
                 println!("_start ({size}):");
-                print_asm(
-                    &binary,
-                    &database,
-                    addr,
-                    size,
-                    Some(&mut unique_instructions),
-                );
+                print_asm(&binary, &db, addr, size, Some(&mut unique_instructions));
             }
             BlockType::Function => {
                 println!("_func_{:x} ({size}):", addr.0);
-                print_asm(
-                    &binary,
-                    &database,
-                    addr,
-                    size,
-                    Some(&mut unique_instructions),
-                );
+                print_asm(&binary, &db, addr, size, Some(&mut unique_instructions));
             }
             BlockType::Jump => {
                 println!("_jump_{:x} ({size}):", addr.0);
-                print_asm(
-                    &binary,
-                    &database,
-                    addr,
-                    size,
-                    Some(&mut unique_instructions),
-                );
+                print_asm(&binary, &db, addr, size, Some(&mut unique_instructions));
             }
             BlockType::Filler => {
                 println!("_filler_{:x} ({size}):", addr.0);
-                print_asm(
-                    &binary,
-                    &database,
-                    addr,
-                    size,
-                    Some(&mut unique_instructions),
-                );
+                print_asm(&binary, &db, addr, size, Some(&mut unique_instructions));
             }
 
             BlockType::JumpTable => {
@@ -260,6 +260,14 @@ fn print_asm(
                     print!(" | {:?}", internal);
                 }
             }
+
+            Instruction::Jump(Op::Mem(mem)) | Instruction::JumpConditional(Op::Mem(mem), _) => {
+                print!(" | {:?}", internal);
+                if let Some(obj) = mem.to_absolute().map(Addr).and_then(|addr| db.get(addr)) {
+                    print!(" ({})", obj.typ());
+                }
+            }
+
             Instruction::Call(_)
             | Instruction::Return(_)
             | Instruction::Jump(_)
@@ -287,6 +295,13 @@ struct PrinterOfSkipped<'a> {
 }
 
 impl<'a> PrinterOfSkipped<'a> {
+    pub fn with_addr(section: SectionData<'a>, start: Addr) -> Self {
+        Self {
+            last_addr: start,
+            section,
+        }
+    }
+
     pub fn new(section: SectionData<'a>) -> Self {
         Self {
             last_addr: section.address,
@@ -316,7 +331,7 @@ impl<'a> PrinterOfSkipped<'a> {
                 println!("    {} {}", self.last_addr, AsHexdump(&head));
             }
 
-            let mut addr_ctr = next_addr;
+            let mut addr_ctr = next_line;
             for word in tail.chunks(8) {
                 println!("    {addr_ctr} {}", AsHexdump(word));
                 addr_ctr += word.len() as u32;

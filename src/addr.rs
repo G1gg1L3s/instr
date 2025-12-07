@@ -41,6 +41,14 @@ impl std::ops::Add<u32> for Addr {
     }
 }
 
+impl std::ops::Add<usize> for Addr {
+    type Output = Addr;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        Addr(self.0 + u32::try_from(rhs).unwrap())
+    }
+}
+
 impl std::ops::AddAssign<u32> for Addr {
     fn add_assign(&mut self, rhs: u32) {
         self.0 += rhs;

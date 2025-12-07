@@ -3,6 +3,7 @@ pub mod block_set;
 pub mod cfg;
 pub mod cfg_func;
 pub mod ins;
+pub mod new_cfg;
 pub mod obj;
 pub mod string;
 
@@ -71,7 +72,11 @@ impl<'a> SectionData<'a> {
     }
 
     pub fn to_range(&self) -> std::ops::Range<Addr> {
-        self.address..(self.address + Addr(self.data.len().try_into().unwrap()))
+        self.address..self.end()
+    }
+
+    pub fn end(&self) -> Addr {
+        self.address + u32::try_from(self.data.len()).unwrap()
     }
 }
 
@@ -309,7 +314,7 @@ pub fn parse_import_table(
             //     WORD Hint; // Unused
             //     BYTE Name[]; // ASCII null-terminated
             // } IMAGE_IMPORT_BY_NAME;
-            let name_addr = ptr + 2;
+            let name_addr = ptr + 2u32;
             let funcname = sections
                 .slice_cstr(name_addr)
                 .expect("failed to read thunk name")
