@@ -28,7 +28,11 @@ pub fn collect_data_strings(section: SectionData<'_>) -> Vec<DataString> {
     let mut data = section.data;
 
     while !data.is_empty() {
-        if let Some((s, size)) = read_ascii_string(data) {
+        if addr == Addr(0x715c18) {
+            println!()
+        }
+
+        if let Some((s, size)) = read_utf8_or_win_1252(data) {
             res.push(DataString {
                 addr,
                 typ: DataStringType::Utf8String(s),
@@ -60,23 +64,24 @@ pub fn collect_data_strings(section: SectionData<'_>) -> Vec<DataString> {
     res
 }
 
-pub fn read_ascii_string(data: &[u8]) -> Option<(String, usize)> {
-    let mut end = 0;
-    while end < data.len() {
-        if data[end] == 0 {
-            let s = str::from_utf8(&data[..end]).unwrap();
-            if s.len() >= 4 {
-                return Some((s.to_string(), end + 1));
-            } else {
-                return None;
-            }
-        }
-        if !(0x20..=0x7E).contains(&data[end]) {
-            return None;
-        }
-        end += 1;
+pub fn read_utf8_or_win_1252(data: &[u8]) -> Option<(String, usize)> {
+    let raw = data.split(|c| *c == 0).next()?;
+    if raw.len() < 4 {
+        return None;
     }
+    // Try UTF-8 first
+    if let Ok(s) = std::str::from_utf8(raw) {
+        return Some((s.to_string(), raw.len() + 1));
+    }
+
     None
+    // TODO: this creates a lot of false positives
+    // let (s, _, was_malformed) = encoding_rs::WINDOWS_1252.decode(raw);
+    // if was_malformed {
+    //     None
+    // } else {
+    //     Some((s.to_string(), raw.len() + 1))
+    // }
 }
 
 pub fn read_utf16_string(data: &[u8]) -> Option<(String, usize)> {

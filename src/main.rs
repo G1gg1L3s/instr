@@ -260,8 +260,21 @@ impl<'a> PrinterOfSkipped<'a> {
                 .section
                 .slice(self.last_addr, usize::try_from(skipped).unwrap());
 
-            let mut addr_ctr = self.last_addr;
-            for word in block.chunks(8) {
+            let next_line = Addr(self.last_addr.0.next_multiple_of(4));
+            let head_size = (next_line.0 - self.last_addr.0) as usize;
+
+            let (head, tail) = if head_size > block.len() {
+                (block, &b""[..])
+            } else {
+                block.split_at(head_size)
+            };
+
+            if head.len() > 0 {
+                println!("    {} {}", self.last_addr, AsHexdump(&head));
+            }
+
+            let mut addr_ctr = next_addr;
+            for word in tail.chunks(8) {
                 println!("    {addr_ctr} {}", AsHexdump(word));
                 addr_ctr += word.len() as u32;
             }

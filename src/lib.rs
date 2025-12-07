@@ -493,7 +493,7 @@ pub fn collect_data_objects(sections: &Sections<'_>, section: SectionData<'_>) -
     let mut data = section.data;
 
     while !data.is_empty() {
-        if let Some((s, size)) = string::read_ascii_string(data) {
+        if let Some((s, size)) = string::read_utf8_or_win_1252(data) {
             res.push(DataObject {
                 addr,
                 kind: DataObjectKind::Utf8String(s),
