@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    hash::Hash,
-};
+use std::{collections::HashMap, hash::Hash};
 
 use petgraph::{
     graph::{DiGraph, NodeIndex},
@@ -242,6 +239,7 @@ impl GraphFunctionCollector {
             .edges_directed(idx.index, petgraph::Direction::Outgoing)
         {
             let target = self.digraph.node_weight(edge.target()).unwrap();
+
             self.process_function(block_to_func, func_addr, *target);
         }
     }
@@ -253,6 +251,19 @@ impl GraphFunctionCollector {
             get_block_mut(blocks, func_addr)
                 .unwrap()
                 .set_typ(BlockType::Function);
+        }
+    }
+
+    pub fn print_block_to_func(&self, blocks: &[Block]) {
+        let block_to_func = self
+            .assign_blocks_to_functions(blocks)
+            .into_iter()
+            .collect::<std::collections::BTreeMap<_, _>>();
+
+        for (addr, funcs) in block_to_func {
+            if funcs.len() > 1 {
+                println!("  - {addr} <- {funcs:?}");
+            }
         }
     }
 }

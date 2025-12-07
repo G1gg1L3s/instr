@@ -335,10 +335,11 @@ pub fn operand_signature_full(instr: &Instruction, index: u32) -> String {
             let index = instr.memory_index();
             let scale = instr.memory_index_scale();
             let disp = instr.memory_displacement32();
+            let segment = instr.memory_segment();
 
             format!(
-                "MEM(base={:?},index={:?},scale={},disp={})",
-                base, index, scale, disp
+                "MEM(base={:?},index={:?},scale={},disp={},segment={:?})",
+                base, index, scale, disp, segment,
             )
         }
 

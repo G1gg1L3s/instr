@@ -65,8 +65,9 @@ fn main() {
     let mut graph_collector = GraphFunctionCollector::with_capacity(blocks.len());
     graph_collector.insert_nodes(&blocks);
     graph_collector.insert_edges(&binary, &blocks);
-    eprintln!(">> Promoting functions based on call graph and tail calls");
-    graph_collector.promote_functions_based_on_tail_calls(&mut blocks);
+    // eprintln!(">> Promoting functions based on call graph and tail calls");
+    // graph_collector.promote_functions_based_on_tail_calls(&mut blocks);
+    // graph_collector.print_block_to_func(&blocks);
 
     let count = count_blocks(blocks.iter());
     println!(
