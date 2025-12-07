@@ -6,7 +6,7 @@ pub mod ins;
 pub mod obj;
 pub mod string;
 
-use std::{borrow::Cow, ops::Add};
+use std::borrow::Cow;
 
 use iced_x86::{Instruction, Mnemonic, OpKind, Register};
 use pe_parser::{pe::PortableExecutable, section::SectionHeader};

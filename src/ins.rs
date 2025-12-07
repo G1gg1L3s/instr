@@ -66,9 +66,7 @@ pub enum Op {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Instruction {
-    CallNear(Addr),
-    // TODO: use op
-    CallMem(Addr),
+    Call(Op),
     Return(u16),
     Jump(Op),
     JumpConditional(Op, Condition),
@@ -89,30 +87,8 @@ pub struct BinaryInstruction {
 }
 
 fn parse_call(instr: &iced_x86::Instruction) -> Option<Instruction> {
-    // Check operand type
-    match instr.op_kind(0) {
-        OpKind::Memory => {
-            // Absolute address: base = None, index = None
-            let base = instr.memory_base();
-            let index = instr.memory_index();
-            let disp = instr.memory_displacement32();
-
-            if base == Register::None && index == Register::None {
-                // This is a static memory address call
-                Some(Instruction::CallMem(Addr(disp)))
-            } else {
-                None
-            }
-        }
-
-        OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64 => {
-            Some(Instruction::CallNear(Addr(
-                instr.near_branch_target().try_into().unwrap(),
-            ))) // already absolute
-        }
-
-        _ => None,
-    }
+    let op = parse_operand(instr, 0)?;
+    Some(Instruction::Call(op))
 }
 
 fn parse_ret(instr: &iced_x86::Instruction) -> Option<Instruction> {
@@ -150,32 +126,41 @@ fn jump_condition(mn: Mnemonic) -> Option<Condition> {
 }
 
 fn parse_jump(instr: &iced_x86::Instruction) -> Option<Instruction> {
-    let op = match instr.op_kind(0) {
+    match instr.mnemonic() {
+        Mnemonic::Loop | Mnemonic::Loope | Mnemonic::Loopne => Some(Instruction::Loop(Addr(
+            instr.near_branch_target().try_into().unwrap(),
+        ))),
+        Mnemonic::Jmp => {
+            let op = parse_operand(instr, 0)?;
+            Some(Instruction::Jump(op))
+        }
+        _ => {
+            let op = parse_operand(instr, 0)?;
+
+            jump_condition(instr.mnemonic()).map(|cond| Instruction::JumpConditional(op, cond))
+        }
+    }
+}
+
+fn parse_operand(instr: &iced_x86::Instruction, operand: u32) -> Option<Op> {
+    match instr.op_kind(operand) {
         OpKind::Memory => {
             let is_base = instr.memory_base() != Register::None;
             let is_index = instr.memory_index() != Register::None;
             let disp = instr.memory_displacement32();
             let scale = instr.memory_index_scale();
-            Op::Mem(Mem {
+            Some(Op::Mem(Mem {
                 is_base,
                 is_index,
                 disp,
                 scale,
-            })
+            }))
         }
-        OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64 => {
-            Op::Addr(Addr(instr.near_branch_target().try_into().unwrap()))
-        }
-
-        _ => return None,
-    };
-
-    match instr.mnemonic() {
-        Mnemonic::Loop | Mnemonic::Loope | Mnemonic::Loopne => Some(Instruction::Loop(Addr(
+        OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64 => Some(Op::Addr(Addr(
             instr.near_branch_target().try_into().unwrap(),
         ))),
-        Mnemonic::Jmp => Some(Instruction::Jump(op)),
-        _ => jump_condition(instr.mnemonic()).map(|cond| Instruction::JumpConditional(op, cond)),
+
+        _ => None,
     }
 }
 

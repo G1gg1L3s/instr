@@ -1,5 +1,5 @@
 use crate::{
-    Binary,
+    Binary, SectionData,
     addr::Addr,
     block_set::BlockSet,
     ins::{self, BinaryInstruction, Instruction, Mem, Op},
@@ -235,10 +235,10 @@ fn process_function_till_the_end_of_block(
         len += 1;
 
         match ins.instr {
-            ins::Instruction::CallNear(addr) => {
+            ins::Instruction::Call(Op::Addr(addr)) => {
                 to_process.push((addr, ToProcessType::Call));
             }
-            ins::Instruction::CallMem(_addr) => {
+            ins::Instruction::Call(Op::Mem(_mem)) => {
                 // TODO
             }
             ins::Instruction::Return(_) => break,
