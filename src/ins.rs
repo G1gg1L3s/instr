@@ -278,10 +278,10 @@ impl<'a> std::iter::Iterator for Decoder<'a> {
         let instr = self.decoder.decode();
         let i = parse_instruction(&instr);
 
-        return Some(BinaryInstruction {
+        Some(BinaryInstruction {
             addr: Addr::from_u64_assert(instr.ip()),
             instr: i,
             len: instr.len(),
-        });
+        })
     }
 }

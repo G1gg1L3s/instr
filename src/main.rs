@@ -4,7 +4,7 @@ use iced_x86::Decoder;
 use instr::{
     SectionData,
     addr::Addr,
-    cfg::{self, Block, BlockType},
+    cfg::{Block, BlockType},
     cfg_func::GraphFunctionCollector,
     ins::{Instruction, Op, parse_instruction},
     instruction_signature, instruction_signature_full, new_cfg,
@@ -327,8 +327,8 @@ impl<'a> PrinterOfSkipped<'a> {
                 block.split_at(head_size)
             };
 
-            if head.len() > 0 {
-                println!("    {} {}", self.last_addr, AsHexdump(&head));
+            if !head.is_empty() {
+                println!("    {} {}", self.last_addr, AsHexdump(head));
             }
 
             let mut addr_ctr = next_line;

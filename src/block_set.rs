@@ -13,6 +13,12 @@ pub enum SplitError {
     Unalighed,
 }
 
+impl Default for BlockSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BlockSet {
     pub fn new() -> Self {
         Self {
@@ -44,7 +50,7 @@ impl BlockSet {
     }
 
     /// Return mutable covering block
-    fn covering_block_mut<'a>(&'a mut self, addr: Addr) -> Option<(Addr, &'a mut Block)> {
+    fn covering_block_mut(&mut self, addr: Addr) -> Option<(Addr, &mut Block)> {
         let key = {
             let (start, block) = self.blocks.range(..=addr).next_back()?;
             if block.contains(addr) {
@@ -64,7 +70,7 @@ impl BlockSet {
     /// - Otherwise splits using Block::split()
     ///
     /// On success returns mutable reference to the NEW right block.
-    pub fn split_at<'a>(&'a mut self, addr: Addr) -> Option<&'a mut Block> {
+    pub fn split_at(&mut self, addr: Addr) -> Option<&mut Block> {
         let (start_addr, old_block) = self.covering_block_mut(addr)?;
 
         if addr == old_block.addr() {
@@ -123,17 +129,15 @@ impl BlockSet {
     pub fn split_range(&mut self, start: Addr, size: usize) {
         let end = start + u32::try_from(size).unwrap();
 
-        if let Some(block) = self.covering_block(start) {
-            if block.contains(start) && block.addr() != start {
+        if let Some(block) = self.covering_block(start)
+            && block.contains(start) && block.addr() != start {
                 self.split_at(start);
             }
-        }
 
-        if let Some(block) = self.covering_block(end) {
-            if block.contains(end) && block.addr() != end {
+        if let Some(block) = self.covering_block(end)
+            && block.contains(end) && block.addr() != end {
                 self.split_at(end);
             }
-        }
     }
 }
 

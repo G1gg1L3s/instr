@@ -1,11 +1,9 @@
-use std::collections::BTreeMap;
 
 use crate::{
-    Binary, SectionData,
+    Binary,
     addr::Addr,
     block_set::BlockSet,
     ins::{self, BinaryInstruction, Instruction, Mem, Op},
-    obj::{ObjDatabase, ObjectTyp},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,8 +111,8 @@ pub fn cut_blocks_as_sausage(binary: &Binary<'_>) -> Vec<Block> {
     let jump_tables = process_jump_tables(binary, &mut to_process);
     to_process.push((binary.entry_point, ToProcessType::Entry));
 
-    let blocks = process_blocks(binary, blocks, jump_tables, to_process);
-    blocks
+    
+    process_blocks(binary, blocks, jump_tables, to_process)
 }
 
 fn process_jump_tables(

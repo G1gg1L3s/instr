@@ -107,11 +107,7 @@ pub fn walk_code_blocks(
             continue;
         }
 
-        let limit = if let Some(next_after) = res.next_after(addr) {
-            Some(usize::try_from(next_after.addr().0 - addr.0).unwrap())
-        } else {
-            None
-        };
+        let limit = res.next_after(addr).map(|next_after| usize::try_from(next_after.addr().0 - addr.0).unwrap());
 
         let WalkedCodeBlock { code, successors } = walk_block(db, text, addr, limit);
         let block = CodeBlock::new(code);
@@ -166,13 +162,11 @@ fn walk_block(
 
         match ins.instr {
             Instruction::Call(Op::Mem(mem)) => {
-                if let Some(obj) = mem.to_absolute().map(Addr).and_then(|addr| db.get(addr)) {
-                    if let ObjectTyp::ImportThunk(import) = obj.typ() {
-                        if import.is_terminating {
+                if let Some(obj) = mem.to_absolute().map(Addr).and_then(|addr| db.get(addr))
+                    && let ObjectTyp::ImportThunk(import) = obj.typ()
+                        && import.is_terminating {
                             break;
                         }
-                    }
-                }
             }
             Instruction::Call(Op::Addr(addr)) => successors.push(CodeBlockSucc::Call(addr)),
             Instruction::Return(_) => break,

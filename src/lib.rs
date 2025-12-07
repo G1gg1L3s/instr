@@ -523,7 +523,7 @@ pub fn collect_data_objects(sections: &Sections<'_>, section: SectionData<'_>) -
             continue;
         }
 
-        if addr.0 % 4 == 0 {
+        if addr.0.is_multiple_of(4) {
             let u32 = data[..4].try_into().unwrap();
             let u32 = u32::from_le_bytes(u32);
             let as_addr = Addr(u32);
