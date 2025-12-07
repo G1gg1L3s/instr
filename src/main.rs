@@ -1,12 +1,15 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, ops::Add};
 
 use iced_x86::Decoder;
 use instr::{
+    SectionData,
     addr::Addr,
     cfg::{Block, BlockType},
     cfg_func::GraphFunctionCollector,
     ins::{Instruction, parse_instruction},
-    instruction_signature, instruction_signature_full, parse_binary,
+    instruction_signature, instruction_signature_full,
+    obj::{self, Object, ObjectTyp},
+    parse_binary,
 };
 
 struct CountBlocks {
@@ -38,6 +41,35 @@ fn count_blocks<'a>(iter: impl Iterator<Item = &'a Block>) -> CountBlocks {
     }
 }
 
+struct AsHexdump<'a>(&'a [u8]);
+
+impl<'a> std::fmt::Display for AsHexdump<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for word in self.0.chunks(4) {
+            for b in word {
+                write!(f, "{:02x} ", b)?;
+            }
+        }
+
+        write!(f, "| ")?;
+
+        for (i, word) in self.0.chunks(4).enumerate() {
+            if i != 0 {
+                write!(f, " ")?;
+            }
+
+            for c in word {
+                if c.is_ascii_graphic() {
+                    write!(f, "{}", *c as char)?;
+                } else {
+                    write!(f, ".")?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 fn main() {
     let data = std::fs::read("../../Barnyard/Barnyard.exe").unwrap();
     let pe = pe_parser::pe::parse_portable_executable(&data).unwrap();
@@ -47,6 +79,35 @@ fn main() {
         "Binary: entry: {} {:#?}",
         binary.entry_point, binary.sections
     );
+
+    let mut database = obj::ObjDatabase::new();
+    let data_strings = instr::string::collect_data_strings(binary.sections.data);
+    let rdata_strings = instr::string::collect_data_strings(binary.sections.rdata);
+
+    for string in data_strings.into_iter().chain(rdata_strings) {
+        database.insert(Object::new(string.addr, ObjectTyp::String(string.typ)));
+    }
+    for lib in &binary.imports {
+        obj::fill_database_with_import(&mut database, lib);
+    }
+
+    println!(".rdata:");
+    let mut printer = PrinterOfSkipped::new(binary.sections.rdata);
+    for obj in database.range(binary.sections.rdata.to_range()) {
+        printer.print_skipped(obj.addr());
+        println!("    {} {:?}", obj.addr(), obj.typ());
+        printer.advance(obj.addr(), obj.len());
+    }
+
+    println!(".data:");
+    let mut printer = PrinterOfSkipped::new(binary.sections.data);
+    for obj in database.range(binary.sections.data.to_range()) {
+        printer.print_skipped(obj.addr());
+        println!("    {} {:?}", obj.addr(), obj.typ());
+        printer.advance(obj.addr(), obj.len());
+    }
+
+    return;
 
     let mut blocks = instr::cfg::cut_blocks_as_sausage(&binary);
 
@@ -174,5 +235,40 @@ fn print_asm(
         if let Some(out) = &mut out {
             out.insert(instruction_signature(&ins));
         }
+    }
+}
+
+struct PrinterOfSkipped<'a> {
+    last_addr: Addr,
+    section: SectionData<'a>,
+}
+
+impl<'a> PrinterOfSkipped<'a> {
+    pub fn new(section: SectionData<'a>) -> Self {
+        Self {
+            last_addr: section.address,
+            section,
+        }
+    }
+
+    pub fn print_skipped(&self, next_addr: Addr) {
+        let skipped = i64::from(next_addr.0) - i64::from(self.last_addr.0);
+        if skipped < 0 {
+            println!("!!! Overlap: {} bytes", -skipped);
+        } else if skipped > 0 {
+            let block = self
+                .section
+                .slice(self.last_addr, usize::try_from(skipped).unwrap());
+
+            let mut addr_ctr = self.last_addr;
+            for word in block.chunks(8) {
+                println!("    {addr_ctr} {}", AsHexdump(word));
+                addr_ctr += word.len() as u32;
+            }
+        }
+    }
+
+    pub fn advance(&mut self, addr: Addr, size: usize) {
+        self.last_addr = addr + u32::try_from(size).unwrap();
     }
 }

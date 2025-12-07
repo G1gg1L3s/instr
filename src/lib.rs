@@ -3,8 +3,10 @@ pub mod block_set;
 pub mod cfg;
 pub mod cfg_func;
 pub mod ins;
+pub mod obj;
+pub mod string;
 
-use std::borrow::Cow;
+use std::{borrow::Cow, ops::Add};
 
 use iced_x86::{Instruction, Mnemonic, OpKind, Register};
 use pe_parser::{pe::PortableExecutable, section::SectionHeader};
@@ -66,6 +68,10 @@ impl<'a> SectionData<'a> {
 
     pub fn read_u32_le(&self, addr: Addr) -> u32 {
         u32::from_le_bytes(self.slice(addr, 4).try_into().unwrap())
+    }
+
+    pub fn to_range(&self) -> std::ops::Range<Addr> {
+        self.address..(self.address + Addr(self.data.len().try_into().unwrap()))
     }
 }
 
@@ -189,6 +195,7 @@ pub struct ImageImportDescriptor {
     pub forwarder_chain: u32,
     pub name: u32,
     pub first_thunk: u32,
+    pub size: usize,
 }
 
 pub fn parse_image_import_descriptor(
@@ -204,6 +211,7 @@ pub fn parse_image_import_descriptor(
             forwarder_chain: u32::from_le_bytes(data[8..12].try_into().unwrap()),
             name: u32::from_le_bytes(data[12..16].try_into().unwrap()),
             first_thunk: u32::from_le_bytes(data[16..20].try_into().unwrap()),
+            size: 20,
         };
         res.push(descriptor);
 
@@ -224,6 +232,7 @@ pub struct ReadString {
 pub struct ImportTableThunk {
     pub name: ReadString,
     pub descriptor_addr: Addr,
+    pub descriptor_size: usize,
     pub target_addr: Addr,
 }
 
@@ -231,6 +240,7 @@ pub struct ImportTableThunk {
 pub struct ImportTableLib {
     pub descriptor_addr: Addr,
     pub name: ReadString,
+    pub size: usize,
     pub thunks: Vec<ImportTableThunk>,
 }
 
@@ -249,6 +259,15 @@ pub fn parse_import_table(
     let mut res = vec![];
     for descriptor in parse_image_import_descriptor(table, addr) {
         if descriptor.name == 0 {
+            res.push(ImportTableLib {
+                descriptor_addr: descriptor.addr,
+                name: ReadString {
+                    address: Addr(0),
+                    value: String::new(),
+                },
+                size: descriptor.size,
+                thunks: vec![],
+            });
             break;
         }
 
@@ -259,6 +278,7 @@ pub fn parse_import_table(
             .to_str()
             .expect("import lib name is not utf8")
             .to_string();
+        println!(">> Libname at {libname_addr} {libname}");
 
         let mut original_first_thunk = Addr(descriptor.original_first_thunk + image_base);
         let mut target_thunk = Addr(descriptor.first_thunk + image_base);
@@ -266,6 +286,15 @@ pub fn parse_import_table(
         let mut thunks = vec![];
         while let Some(ptr) = sections.read_u32_le(original_first_thunk) {
             if ptr == 0 {
+                thunks.push(ImportTableThunk {
+                    name: ReadString {
+                        address: Addr(0),
+                        value: String::new(),
+                    },
+                    descriptor_size: 4,
+                    descriptor_addr: original_first_thunk,
+                    target_addr: target_thunk,
+                });
                 break;
             }
 
@@ -293,6 +322,7 @@ pub fn parse_import_table(
                     address: name_addr,
                     value: funcname,
                 },
+                descriptor_size: 4,
                 descriptor_addr: original_first_thunk,
                 target_addr: target_thunk,
             });
@@ -303,6 +333,7 @@ pub fn parse_import_table(
 
         res.push(ImportTableLib {
             descriptor_addr: descriptor.addr,
+            size: descriptor.size,
             name: ReadString {
                 address: libname_addr,
                 value: libname,
@@ -455,55 +486,6 @@ pub struct DataObject {
     pub kind: DataObjectKind,
 }
 
-fn read_ascii_string(data: &[u8]) -> Option<(String, usize)> {
-    let mut end = 0;
-    while end < data.len() {
-        if data[end] == 0 {
-            let s = str::from_utf8(&data[..end]).unwrap();
-            if s.len() >= 4 {
-                return Some((s.to_string(), end + 1));
-            } else {
-                return None;
-            }
-        }
-        if !(0x20..=0x7E).contains(&data[end]) {
-            return None;
-        }
-        end += 1;
-    }
-    None
-}
-
-fn read_utf16_string(data: &[u8]) -> Option<(String, usize)> {
-    if data.len() < 2 {
-        return None;
-    }
-    if data[1] != 0 {
-        return None;
-    } // must start with LE ASCII-range wide char
-
-    let mut end = 0;
-    while end + 1 < data.len() {
-        if data[end] == 0 && data[end + 1] == 0 {
-            let units: Vec<u16> = data[..end]
-                .chunks_exact(2)
-                .map(|c| u16::from_le_bytes([c[0], c[1]]))
-                .collect();
-            let s = String::from_utf16(&units).unwrap();
-            if s.len() >= 4 {
-                return Some((s, end + 2));
-            } else {
-                return None;
-            }
-        }
-        if data[end + 1] != 0 {
-            return None;
-        } // only ASCII-range UTF-16 allowed here
-        end += 2;
-    }
-    None
-}
-
 pub fn collect_data_objects(sections: &Sections<'_>, section: SectionData<'_>) -> Vec<DataObject> {
     let mut res = Vec::with_capacity(sections.rdata.len() / 4);
 
@@ -511,46 +493,48 @@ pub fn collect_data_objects(sections: &Sections<'_>, section: SectionData<'_>) -
     let mut data = section.data;
 
     while !data.is_empty() {
-        if let Some((s, size)) = read_ascii_string(data) {
+        if let Some((s, size)) = string::read_ascii_string(data) {
             res.push(DataObject {
                 addr,
                 kind: DataObjectKind::Utf8String(s),
             });
             // It seems like string have padding after them
-            let size = size.next_multiple_of(4).min(data.len());
+            let size = size.next_multiple_of(2).min(data.len());
             addr += size as u32;
             data = &data[size..];
             continue;
         }
 
         // 2. UTF-16 string?
-        if let Some((s, size)) = read_utf16_string(data) {
+        if let Some((s, size)) = string::read_utf16_string(data) {
             res.push(DataObject {
                 addr,
                 kind: DataObjectKind::Utf16String(s),
             });
 
-            let size = size.next_multiple_of(4).min(data.len());
+            let size = size.next_multiple_of(2).min(data.len());
             addr += size as u32;
             data = &data[size..];
             continue;
         }
 
-        let u32 = data[..4].try_into().unwrap();
-        let u32 = u32::from_le_bytes(u32);
-        let as_addr = Addr(u32);
+        if addr.0 % 4 == 0 {
+            let u32 = data[..4].try_into().unwrap();
+            let u32 = u32::from_le_bytes(u32);
+            let as_addr = Addr(u32);
 
-        let kind = match as_addr {
-            addr if sections.rdata.contains(addr) => DataObjectKind::RdataRef(addr),
-            addr if sections.data.contains(addr) => DataObjectKind::DataRef(addr),
-            addr if sections.text.contains(addr) => DataObjectKind::FunctionsRef(addr),
-            _ => DataObjectKind::Const(u32),
-        };
+            let kind = match as_addr {
+                addr if sections.rdata.contains(addr) => DataObjectKind::RdataRef(addr),
+                addr if sections.data.contains(addr) => DataObjectKind::DataRef(addr),
+                addr if sections.text.contains(addr) => DataObjectKind::FunctionsRef(addr),
+                _ => DataObjectKind::Const(u32),
+            };
 
-        res.push(DataObject { addr, kind });
+            res.push(DataObject { addr, kind });
+        }
 
-        data = &data[4..];
-        addr += 4;
+        data = &data[2..];
+        addr += 2;
     }
 
     res
