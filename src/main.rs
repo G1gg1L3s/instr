@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, ops::Add};
+use std::collections::BTreeSet;
 
 use iced_x86::Decoder;
 use instr::{
@@ -6,9 +6,9 @@ use instr::{
     addr::Addr,
     cfg::{Block, BlockType},
     cfg_func::GraphFunctionCollector,
-    ins::{Instruction, parse_instruction},
+    ins::{Instruction, Op, parse_instruction},
     instruction_signature, instruction_signature_full,
-    obj::{self, Object, ObjectTyp},
+    obj::{self, ObjDatabase, Object, ObjectTyp},
     parse_binary,
 };
 
@@ -107,8 +107,6 @@ fn main() {
         printer.advance(obj.addr(), obj.len());
     }
 
-    return;
-
     let mut blocks = instr::cfg::cut_blocks_as_sausage(&binary);
 
     eprintln!(">> Promoting function based on .rdata");
@@ -149,7 +147,13 @@ fn main() {
             Some(0) => {} // OK
             Some(skipped) => {
                 println!("_skipped {} bytes:", skipped);
-                print_asm(&binary, last_addr_end, skipped.try_into().unwrap(), None);
+                print_asm(
+                    &binary,
+                    &database,
+                    last_addr_end,
+                    skipped.try_into().unwrap(),
+                    None,
+                );
             }
             _ => println!("... OVERLAP"),
         }
@@ -161,19 +165,43 @@ fn main() {
         match block.typ() {
             BlockType::Entry => {
                 println!("_start ({size}):");
-                print_asm(&binary, addr, size, Some(&mut unique_instructions));
+                print_asm(
+                    &binary,
+                    &database,
+                    addr,
+                    size,
+                    Some(&mut unique_instructions),
+                );
             }
             BlockType::Function => {
                 println!("_func_{:x} ({size}):", addr.0);
-                print_asm(&binary, addr, size, Some(&mut unique_instructions));
+                print_asm(
+                    &binary,
+                    &database,
+                    addr,
+                    size,
+                    Some(&mut unique_instructions),
+                );
             }
             BlockType::Jump => {
                 println!("_jump_{:x} ({size}):", addr.0);
-                print_asm(&binary, addr, size, Some(&mut unique_instructions));
+                print_asm(
+                    &binary,
+                    &database,
+                    addr,
+                    size,
+                    Some(&mut unique_instructions),
+                );
             }
             BlockType::Filler => {
                 println!("_filler_{:x} ({size}):", addr.0);
-                print_asm(&binary, addr, size, Some(&mut unique_instructions));
+                print_asm(
+                    &binary,
+                    &database,
+                    addr,
+                    size,
+                    Some(&mut unique_instructions),
+                );
             }
 
             BlockType::JumpTable => {
@@ -203,6 +231,7 @@ fn main() {
 
 fn print_asm(
     binary: &instr::Binary<'_>,
+    db: &ObjDatabase,
     addr: Addr,
     size: usize,
     mut out: Option<&mut BTreeSet<String>>,
@@ -214,23 +243,37 @@ fn print_asm(
         let sig = instruction_signature_full(&ins);
         let instrformat = ins.to_string();
         let internal = parse_instruction(&ins);
-        if !matches!(internal, Instruction::IcedX86) {
-            println!(
-                "    0x{:x} {: <30} | {} | {:?}",
-                ins.ip(),
-                instrformat,
-                sig,
-                internal
-            );
-        } else {
-            println!(
-                "    0x{:x} {: <30} | {} ({:?})",
-                ins.ip(),
-                instrformat,
-                sig,
-                ins.mnemonic()
-            );
+
+        print!(
+            "    0x{:x} {: <30} | {} ({:?})",
+            ins.ip(),
+            instrformat,
+            sig,
+            ins.mnemonic()
+        );
+
+        match internal {
+            Instruction::Call(Op::Mem(mem)) => {
+                if let Some(obj) = mem.to_absolute().map(Addr).and_then(|addr| db.get(addr)) {
+                    print!(" | call {}", obj.typ());
+                } else {
+                    print!(" | {:?}", internal);
+                }
+            }
+            Instruction::Call(_)
+            | Instruction::Return(_)
+            | Instruction::Jump(_)
+            | Instruction::JumpConditional(_, _)
+            | Instruction::Loop(_)
+            | Instruction::PushImm(_)
+            | Instruction::MovImm(_)
+            | Instruction::Int3
+            | Instruction::Invalid => {
+                print!(" | {:?}", internal);
+            }
+            Instruction::IcedX86 => {}
         }
+        println!();
 
         if let Some(out) = &mut out {
             out.insert(instruction_signature(&ins));

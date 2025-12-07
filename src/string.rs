@@ -6,6 +6,14 @@ pub enum DataStringType {
     Utf16String(String),
 }
 
+impl DataStringType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            DataStringType::Utf8String(s) | DataStringType::Utf16String(s) => s.as_str(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DataString {
     pub addr: Addr,

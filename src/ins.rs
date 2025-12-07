@@ -58,10 +58,29 @@ pub struct Mem {
     pub scale: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl Mem {
+    pub fn to_absolute(self) -> Option<u32> {
+        if !self.is_base && !self.is_index && self.scale == 1 {
+            Some(self.disp)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub enum Op {
     Addr(Addr),
     Mem(Mem),
+}
+
+impl std::fmt::Debug for Op {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Addr(arg) => f.debug_tuple("Addr").field(arg).finish(),
+            Self::Mem(arg) => arg.fmt(f),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

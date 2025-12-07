@@ -33,6 +33,25 @@ pub enum ObjectTyp {
     String(DataStringType),
 }
 
+impl std::fmt::Display for ObjectTyp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectTyp::ImportThunk(import_thunk) => {
+                write!(f, "import:{}/{}", import_thunk.lib, import_thunk.func)
+            }
+            ObjectTyp::ImportLibDescriptor(desc) => {
+                write!(f, "import_lib_descriptor:{}", desc.lib)
+            }
+            ObjectTyp::ImportFuncDescriptor(desc) => {
+                write!(f, "import_func_descriptor:{}/{}", desc.lib, desc.func)
+            }
+            ObjectTyp::String(str) => {
+                write!(f, "{:?}", str.as_str())
+            }
+        }
+    }
+}
+
 impl std::fmt::Debug for ObjectTyp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -97,6 +116,10 @@ impl ObjDatabase {
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Object> {
         self.objects.values_mut()
+    }
+
+    pub fn get(&self, addr: Addr) -> Option<&Object> {
+        self.objects.get(&addr)
     }
 }
 

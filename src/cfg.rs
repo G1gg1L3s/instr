@@ -1,5 +1,5 @@
 use crate::{
-    Binary, SectionData,
+    Binary,
     addr::Addr,
     block_set::BlockSet,
     ins::{self, BinaryInstruction, Instruction, Mem, Op},
