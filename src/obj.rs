@@ -7,6 +7,7 @@ pub struct ImportThunk {
     pub lib: Arc<str>,
     pub func: Arc<str>,
     pub descriptor: Addr,
+    pub is_terminating: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -130,7 +131,18 @@ pub fn fill_database_with_import(database: &mut ObjDatabase, lib: &ImportTableLi
                 lib: libname.clone(),
                 func: func_name.clone(),
                 descriptor: thunk.descriptor_addr,
+                is_terminating: is_well_known_exit(&libname, &func_name),
             }),
         ));
     }
+}
+
+fn is_well_known_exit(lib: &str, func: &str) -> bool {
+    let known = [
+        ("MSVCR71.dll", "exit"),
+        ("MSVCR71.dll", "_exit"),
+        ("MSVCR71.dll", "_cexit"),
+        ("MSVCR71.dll", "_amsg_exit"),
+    ];
+    known.contains(&(lib, func))
 }
