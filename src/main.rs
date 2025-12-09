@@ -99,17 +99,24 @@ fn main() {
         binary.sections.text,
         *funcs_from_start.first_key_value().unwrap().0,
     );
-    for (func_addr, func) in funcs_from_start {
+    for (func_addr, block) in funcs_from_start {
         printer.print_skipped(func_addr);
+
+        if let new_cfg::Block::JumpTable(table) = block {
+            println!("_jump_table_{}", table.addr());
+            print_jump_table(&table);
+            printer.advance(table.addr(), table.len());
+            continue;
+        }
 
         if func_addr == binary.entry_point {
             println!("_start:");
         } else {
             println!("_block_{}:", func_addr);
         }
-        print_asm(&binary, &db, func.addr(), func.len(), None);
+        print_asm(&binary, &db, block.addr(), block.len(), None);
         println!();
-        printer.advance(func.addr(), func.len());
+        printer.advance(block.addr(), block.len());
     }
 
     println!(".rdata:");
@@ -229,6 +236,13 @@ fn main() {
     }
 }
 
+fn print_jump_table(table: &new_cfg::JumpTable) {
+    for entry in &table.entries {
+        println!("    {} -> {}", entry.addr, entry.target);
+    }
+    println!();
+}
+
 fn print_asm(
     binary: &instr::Binary<'_>,
     db: &ObjDatabase,
@@ -336,6 +350,7 @@ impl<'a> PrinterOfSkipped<'a> {
                 println!("    {addr_ctr} {}", AsHexdump(word));
                 addr_ctr += word.len() as u32;
             }
+            println!()
         }
     }
 
