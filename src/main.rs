@@ -95,10 +95,7 @@ fn main() {
 
     println!(".text:");
 
-    let mut printer = PrinterOfSkipped::with_addr(
-        binary.sections.text,
-        *funcs_from_start.first_key_value().unwrap().0,
-    );
+    let mut printer = PrinterOfSkipped::new(binary.sections.text);
     for (func_addr, block) in funcs_from_start {
         printer.print_skipped(func_addr);
 
@@ -111,6 +108,10 @@ fn main() {
 
         if func_addr == binary.entry_point {
             println!("_start:");
+        } else if let new_cfg::Block::Code(code) = &block
+            && code.typ() == new_cfg::CodeBlockTyp::Entry
+        {
+            println!("_func_{}:", func_addr);
         } else {
             println!("_block_{}:", func_addr);
         }

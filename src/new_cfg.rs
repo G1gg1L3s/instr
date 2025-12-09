@@ -8,17 +8,25 @@ use crate::{
     obj::{ObjDatabase, ObjectTyp},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeBlockTyp {
+    Plain,
+    Entry,
+}
+
 #[derive(Debug)]
 pub struct CodeBlock {
     code: Vec<BinaryInstruction>,
     len: usize,
+    typ: CodeBlockTyp,
 }
 
 impl CodeBlock {
-    pub fn new(code: Vec<BinaryInstruction>) -> Self {
+    pub fn new(code: Vec<BinaryInstruction>, typ: CodeBlockTyp) -> Self {
         Self {
             len: code.iter().map(|i| i.len).sum(),
             code,
+            typ,
         }
     }
 
@@ -46,7 +54,11 @@ impl CodeBlock {
 
         let tail = self.code.split_off(idx);
 
-        (Self::new(self.code), tail)
+        (Self::new(self.code, self.typ), tail)
+    }
+
+    pub fn typ(&self) -> CodeBlockTyp {
+        self.typ
     }
 }
 
@@ -105,8 +117,12 @@ impl BlockTree {
         self.tree.insert(block.addr(), block);
     }
 
-    pub fn get(&mut self, addr: Addr) -> Option<&Block> {
+    pub fn get(&self, addr: Addr) -> Option<&Block> {
         self.tree.get(&addr)
+    }
+
+    pub fn get_mut(&mut self, addr: Addr) -> Option<&mut Block> {
+        self.tree.get_mut(&addr)
     }
 
     pub fn get_with_addr(&mut self, addr: Addr) -> Option<&Block> {
@@ -135,11 +151,16 @@ pub fn walk_code_blocks(
     text: SectionData<'_>,
     start: Addr,
 ) -> BTreeMap<Addr, Block> {
-    let mut queue = vec![start];
+    let mut queue = vec![(start, CodeBlockTyp::Entry)];
     let mut res = BlockTree::default();
 
-    while let Some(addr) = queue.pop() {
-        if res.get(addr).is_some() {
+    while let Some((addr, typ)) = queue.pop() {
+        if let Some(block) = res.get_mut(addr) {
+            if let CodeBlockTyp::Entry = typ
+                && let Block::Code(code) = block
+            {
+                code.typ = typ;
+            }
             continue;
         }
 
@@ -149,7 +170,7 @@ pub fn walk_code_blocks(
             };
 
             let (left, right_code) = block.split(addr);
-            let right = CodeBlock::new(right_code);
+            let right = CodeBlock::new(right_code, typ);
 
             res.insert(Block::Code(left));
             res.insert(Block::Code(right));
@@ -161,23 +182,27 @@ pub fn walk_code_blocks(
             .map(|next_after| usize::try_from(next_after.addr().0 - addr.0).unwrap());
 
         let WalkedCodeBlock { code, successors } = walk_block(db, text, addr, limit);
-        let block = CodeBlock::new(code);
+        let block = CodeBlock::new(code, typ);
 
         for succ in successors {
             match succ {
-                CodeBlockSucc::Jump(addr) => queue.push(addr),
-                CodeBlockSucc::JumpCond(addr) => queue.push(addr),
-                CodeBlockSucc::Call(addr) => queue.push(addr),
+                CodeBlockSucc::Jump(addr) => queue.push((addr, CodeBlockTyp::Plain)),
+                CodeBlockSucc::JumpCond(addr) => queue.push((addr, CodeBlockTyp::Plain)),
+                CodeBlockSucc::Call(addr) => queue.push((addr, CodeBlockTyp::Entry)),
                 CodeBlockSucc::JumpTable(addr) => {
                     eprintln!(">> Jump table: {addr}");
                     let Some(entries) = walk_jump_table(text, addr) else {
                         continue;
                     };
 
-                    queue.extend(entries.iter().map(|entry| entry.target));
+                    queue.extend(
+                        entries
+                            .iter()
+                            .map(|entry| (entry.target, CodeBlockTyp::Plain)),
+                    );
                     res.insert(Block::JumpTable(JumpTable { entries }));
                 }
-                CodeBlockSucc::Fallthrough => queue.push(block.end()),
+                CodeBlockSucc::Fallthrough => queue.push((block.end(), CodeBlockTyp::Plain)),
             }
         }
 
