@@ -92,6 +92,7 @@ fn main() {
     }
 
     let funcs_from_start = new_cfg::walk_code_blocks(&db, binary.sections.text, binary.entry_point);
+    new_cfg::derive_functions(&db, &funcs_from_start.values().cloned().collect::<Vec<_>>());
 
     println!(".text:");
 

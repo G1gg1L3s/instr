@@ -1,4 +1,9 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
+
+use petgraph::{
+    graph::{DiGraph, NodeIndex},
+    visit::EdgeRef,
+};
 
 use crate::{
     SectionData,
@@ -14,7 +19,7 @@ pub enum CodeBlockTyp {
     Entry,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CodeBlock {
     code: Vec<BinaryInstruction>,
     len: usize,
@@ -62,7 +67,7 @@ impl CodeBlock {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct JumpTable {
     pub entries: Vec<JumpTableEntry>,
 }
@@ -77,7 +82,7 @@ impl JumpTable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Block {
     Code(CodeBlock),
     JumpTable(JumpTable),
@@ -212,7 +217,7 @@ pub fn walk_code_blocks(
     res.tree
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct JumpTableEntry {
     pub addr: Addr,
     pub target: Addr,
@@ -301,6 +306,7 @@ fn walk_block(
             }
             Instruction::Loop(addr) => {
                 successors.push(CodeBlockSucc::JumpCond(addr));
+                successors.push(CodeBlockSucc::Fallthrough);
                 break;
             }
             Instruction::Int3 | Instruction::Invalid => {
@@ -312,4 +318,235 @@ fn walk_block(
     }
 
     WalkedCodeBlock { code, successors }
+}
+
+#[derive(Debug, Default)]
+pub struct BlockGraph {
+    graph: DiGraph<Addr, ()>,
+    addr_to_node: HashMap<Addr, NodeIndex>,
+}
+
+impl BlockGraph {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert_node(&mut self, addr: Addr) {
+        match self.addr_to_node.entry(addr) {
+            Entry::Occupied(_) => {}
+            Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(self.graph.add_node(addr));
+            }
+        }
+    }
+
+    pub fn insert_edge(&mut self, from: Addr, to: Addr) {
+        let from = self
+            .addr_to_node
+            .entry(from)
+            .or_insert_with(|| self.graph.add_node(from));
+        let from = *from;
+        let to = self
+            .addr_to_node
+            .entry(to)
+            .or_insert_with(|| self.graph.add_node(to));
+        let to = *to;
+        self.graph.add_edge(from, to, ());
+    }
+
+    pub fn successors(&self, addr: Addr) -> impl Iterator<Item = Addr> {
+        let idx = self.addr_to_node[&addr];
+        self.graph
+            .edges_directed(idx, petgraph::Direction::Outgoing)
+            .map(|edge| {
+                let target = edge.target();
+                self.graph.node_weight(target).copied().unwrap()
+            })
+    }
+
+    pub fn externals(&self) -> impl Iterator<Item = Addr> {
+        self.graph
+            .externals(petgraph::Direction::Incoming)
+            .map(|node| self.graph.node_weight(node).copied().unwrap())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct FuncAddr(Addr);
+
+pub fn build_jump_graph(db: &ObjDatabase, blocks: &[Block]) -> BlockGraph {
+    let blocks = BTreeMap::from_iter(blocks.iter().map(|b| (b.addr(), b)));
+    let mut jump_graph = BlockGraph::new();
+
+    for block in blocks.values() {
+        if let Block::Code(block) = block {
+            jump_graph.insert_node(block.addr());
+            let next_addrs = next_addrs(db, &blocks, block);
+
+            for next in &next_addrs {
+                jump_graph.insert_edge(block.addr(), *next);
+            }
+        }
+    }
+
+    let dot = petgraph::dot::Dot::with_config(
+        &jump_graph.graph,
+        &[
+            petgraph::dot::Config::EdgeNoLabel,
+            petgraph::dot::Config::RankDir(petgraph::dot::RankDir::TB),
+        ],
+    );
+    std::fs::write("block.dot", format!("{:?}", dot)).unwrap();
+
+    jump_graph
+}
+
+fn next_addrs(db: &ObjDatabase, blocks: &BTreeMap<Addr, &Block>, block: &CodeBlock) -> Vec<Addr> {
+    let last = block.code.last().unwrap();
+    let mut successors = vec![];
+
+    match last.instr {
+        Instruction::Call(Op::Mem(mem)) => {
+            let is_terminating = mem
+                .to_absolute()
+                .map(Addr)
+                .and_then(|addr| db.get(addr))
+                .and_then(|obj| match obj.typ() {
+                    ObjectTyp::ImportThunk(import) => Some(import),
+                    _ => None,
+                })
+                .map(|import| import.is_terminating)
+                .unwrap_or(false);
+
+            if !is_terminating {
+                successors.push(block.end());
+            }
+        }
+        Instruction::Return(_) => {}
+        Instruction::Jump(Op::Addr(addr)) => {
+            successors.push(addr);
+        }
+        Instruction::Jump(Op::Mem(mem)) => {
+            if looks_like_jump_table(&mem) {
+                if let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp)) {
+                    successors.extend(jt.entries.iter().map(|entry| entry.target));
+                }
+            }
+        }
+        Instruction::JumpConditional(Op::Addr(addr), _) => {
+            successors.push(addr);
+            successors.push(block.end());
+        }
+        Instruction::JumpConditional(Op::Mem(mem), _) => {
+            if looks_like_jump_table(&mem) {
+                if let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp)) {
+                    successors.extend(jt.entries.iter().map(|entry| entry.target));
+                }
+            }
+            successors.push(block.end());
+        }
+        Instruction::Loop(addr) => {
+            successors.push(addr);
+            successors.push(block.end());
+        }
+        Instruction::Int3 | Instruction::Invalid => {
+            panic!(">> {last:?}");
+        }
+        _ => {
+            successors.push(block.end());
+        }
+    }
+
+    successors
+}
+
+pub fn derive_functions(db: &ObjDatabase, blocks: &[Block]) {
+    let jump_graph = build_jump_graph(db, blocks);
+
+    let mut blocks = BTreeMap::from_iter(blocks.iter().map(|b| (b.addr(), b.clone())));
+
+    let (block_to_func, tail_call_funcs) = assign_block_to_func(&jump_graph, &blocks);
+
+    let block_to_func = if tail_call_funcs.len() > 0 {
+        for FuncAddr(addr) in tail_call_funcs {
+            let Some(Block::Code(code)) = blocks.get_mut(&addr) else {
+                continue;
+            };
+
+            if code.typ != CodeBlockTyp::Entry {
+                eprintln!("Promoting {addr} to function");
+                code.typ = CodeBlockTyp::Entry;
+            }
+        }
+
+        build_jump_graph(db, &blocks.values().cloned().collect::<Vec<_>>());
+
+        let (block_to_func, tail_call_funcs) = assign_block_to_func(&jump_graph, &blocks);
+
+        if tail_call_funcs.len() > 0 {
+            panic!(">> tail calls again: {:?}", tail_call_funcs);
+        }
+        block_to_func
+    } else {
+        block_to_func
+    };
+
+    println!("block to func:");
+    for (block_addr, func) in BTreeMap::from_iter(block_to_func) {
+        println!("    {block_addr} -> {func:?}");
+    }
+}
+
+fn assign_block_to_func(
+    jump_graph: &BlockGraph,
+    blocks: &BTreeMap<Addr, Block>,
+) -> (HashMap<Addr, FuncAddr>, HashSet<FuncAddr>) {
+    let mut block_to_func: HashMap<Addr, FuncAddr> = HashMap::new();
+    let mut identified_funcs = HashSet::new();
+
+    let mut to_visit = vec![];
+    for func_addr in jump_graph.externals() {
+        if func_addr == Addr(0x6baff0) {
+            eprintln!(">> Processing 0x6baff0");
+        }
+
+        if let Some(Block::Code(code)) = blocks.get(&func_addr) {
+            if code.typ != CodeBlockTyp::Entry {
+                identified_funcs.insert(FuncAddr(func_addr));
+            }
+        }
+
+        to_visit.clear();
+        to_visit.push(func_addr);
+
+        while let Some(to_visit_addr) = to_visit.pop() {
+            match block_to_func.entry(to_visit_addr) {
+                Entry::Occupied(entry) => {
+                    if entry.get() != &FuncAddr(func_addr) {
+                        identified_funcs.insert(FuncAddr(to_visit_addr));
+                    }
+                    continue;
+                }
+                Entry::Vacant(vacant_entry) => {
+                    vacant_entry.insert(FuncAddr(func_addr));
+                }
+            }
+
+            block_to_func
+                .entry(to_visit_addr)
+                .or_insert_with(|| FuncAddr(func_addr));
+
+            for succ in jump_graph.successors(to_visit_addr) {
+                let Block::Code(block) = &blocks[&succ] else {
+                    continue;
+                };
+                if block.typ() == CodeBlockTyp::Entry {
+                    continue;
+                }
+                to_visit.push(succ);
+            }
+        }
+    }
+
+    (block_to_func, identified_funcs)
 }

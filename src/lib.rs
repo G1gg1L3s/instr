@@ -394,7 +394,22 @@ pub fn instruction_signature_full(instr: &iced_x86::Instruction) -> String {
     for i in 0..instr.op_count() {
         ops.push(operand_signature_full(instr, i));
     }
-    format!("{:?}({})", instr.mnemonic(), ops.join(","))
+
+    let mut prefixes = vec![];
+    prefixes.extend(instr.has_rep_prefix().then_some("rep"));
+    prefixes.extend(instr.has_repe_prefix().then_some("repe"));
+    prefixes.extend(instr.has_repne_prefix().then_some("repne"));
+    prefixes.extend(instr.has_xacquire_prefix().then_some("xacquire"));
+    prefixes.extend(instr.has_xrelease_prefix().then_some("xrelease"));
+    prefixes.extend(instr.has_lock_prefix().then_some("lock"));
+
+    let prefixes = if prefixes.len() > 0 {
+        format!(" prefix={}", prefixes.join(":"))
+    } else {
+        String::new()
+    };
+
+    format!("{:?}({}){}", instr.mnemonic(), ops.join(","), prefixes,)
 }
 
 pub fn operand_signature(instr: &Instruction, index: u32) -> Cow<'static, str> {
