@@ -90,16 +90,18 @@ impl std::fmt::Display for Imm {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Size {
+    U1,
     U8,
     U16,
     U32,
 }
 impl Size {
-    fn to_bytes(&self) -> u32 {
+    fn to_bytes(&self) -> Option<u32> {
         match self {
-            Size::U8 => 1,
-            Size::U16 => 2,
-            Size::U32 => 4,
+            Size::U1 => None,
+            Size::U8 => Some(1),
+            Size::U16 => Some(2),
+            Size::U32 => Some(4),
         }
     }
 }
@@ -107,6 +109,7 @@ impl Size {
 impl std::fmt::Display for Size {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::U1 => write!(f, "bool"),
             Size::U8 => write!(f, "u8"),
             Size::U16 => write!(f, "u16"),
             Size::U32 => write!(f, "u32"),
@@ -170,6 +173,8 @@ pub enum BinOp {
     Sub,
     Xor,
     Mul,
+    BitAnd,
+    BitOr,
 }
 
 impl std::fmt::Display for BinOp {
@@ -179,6 +184,8 @@ impl std::fmt::Display for BinOp {
             BinOp::Sub => write!(f, "-"),
             BinOp::Mul => write!(f, "*"),
             BinOp::Xor => write!(f, "xor"),
+            BinOp::BitAnd => write!(f, "&"),
+            BinOp::BitOr => write!(f, "|"),
         }
     }
 }
@@ -228,6 +235,12 @@ pub enum Instr {
     SetSignFlag {
         src: Value,
     },
+
+    // TODO: may be replaced with just `0 - src`
+    Not {
+        dst: Value,
+        src: Value,
+    },
 }
 
 impl std::fmt::Display for Instr {
@@ -262,6 +275,7 @@ impl std::fmt::Display for Instr {
                 write!(f, "cf = is_carry {lhs} {op} {rhs}")
             }
             Self::SetSignFlag { src } => write!(f, "sf = sign {src}"),
+            Self::Not { dst, src } => write!(f, "{dst} = not {src}"),
         }
     }
 }
@@ -501,7 +515,7 @@ fn lower_push(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         op: BinOp::Sub,
         dst: tmp,
         lhs: esp.clone(),
-        rhs: Value::Imm(Imm::U32(value.size().unwrap().to_bytes())),
+        rhs: Value::Imm(Imm::U32(value.size().unwrap().to_bytes().unwrap())),
     });
 
     ctx.emit(Instr::Store {
@@ -579,11 +593,180 @@ fn lower_cmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     ctx.emit(Instr::SetSignFlag { src: tmp });
 }
 
-pub struct Block {
-    instr: Vec<AnnotatedInstr>,
+#[derive(Debug, Clone)]
+pub enum Terminator {
+    Cond {
+        cond: Value,
+        then_bb: Value,
+        else_bb: Value,
+    },
 }
 
-fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+impl std::fmt::Display for Terminator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Terminator::Cond {
+                cond,
+                then_bb,
+                else_bb,
+            } => write!(f, "if {cond} then jmp {then_bb} else jmp {else_bb}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AnnotatedTerminator {
+    addr: Addr,
+    inner: Terminator,
+}
+
+fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
+    let target = lower_operand(ctx, ins, 0);
+
+    let cond = match ins.mnemonic() {
+        Mnemonic::Je => Value::Flag(Flag::Zf),
+        Mnemonic::Jne => {
+            // zf = 0
+            emit_not(ctx, Value::Flag(Flag::Zf))
+        }
+        Mnemonic::Ja => {
+            // jump if above (unsigned) (cf = 0 and zf = 0)
+            let cf_is_zero = emit_not(ctx, Value::Flag(Flag::Cf));
+            let zf_is_zero = emit_not(ctx, Value::Flag(Flag::Zf));
+            emit_bin(ctx, BinOp::BitAnd, cf_is_zero, zf_is_zero)
+        }
+        Mnemonic::Jae => {
+            // jump if aboce or eq (unsigned) (cf = 0)
+            emit_not(ctx, Value::Flag(Flag::Cf))
+        }
+        Mnemonic::Jb => {
+            // jump if below (unsigned) cf = 1
+            Value::Flag(Flag::Cf)
+        }
+        Mnemonic::Jbe => {
+            // jump if below or eq (unsigned) cf = 1 or zf = 1
+            emit_bin(
+                ctx,
+                BinOp::BitOr,
+                Value::Flag(Flag::Cf),
+                Value::Flag(Flag::Zf),
+            )
+        }
+        Mnemonic::Jg => {
+            // jump if greater (signed) (zf = 0 and sf = of)
+            let sf_ne_of = emit_bin(
+                ctx,
+                BinOp::Xor,
+                Value::Flag(Flag::Sf),
+                Value::Flag(Flag::Of),
+            );
+            let sf_eq_of = emit_not(ctx, sf_ne_of);
+            let not_zf = emit_not(ctx, Value::Flag(Flag::Zf));
+
+            emit_bin(ctx, BinOp::BitAnd, not_zf, sf_eq_of)
+        }
+        Mnemonic::Jge => {
+            // jump if greater or equal (sf = of)
+            let sf_ne_of = emit_bin(
+                ctx,
+                BinOp::Xor,
+                Value::Flag(Flag::Sf),
+                Value::Flag(Flag::Of),
+            );
+            emit_not(ctx, sf_ne_of)
+        }
+        Mnemonic::Jl => {
+            // jump if less (signed) (sf <> of)
+            emit_bin(
+                ctx,
+                BinOp::Xor,
+                Value::Flag(Flag::Sf),
+                Value::Flag(Flag::Of),
+            )
+        }
+        Mnemonic::Jle => {
+            // jump if less or equal (signed) (zf = 1 or sf <> of)
+            let sf_ne_of = emit_bin(
+                ctx,
+                BinOp::Xor,
+                Value::Flag(Flag::Sf),
+                Value::Flag(Flag::Of),
+            );
+            emit_bin(ctx, BinOp::BitOr, Value::Flag(Flag::Zf), sf_ne_of)
+        }
+        Mnemonic::Jo => {
+            // of = 1
+            Value::Flag(Flag::Of)
+        }
+        Mnemonic::Jno => {
+            // of = 0
+            emit_not(ctx, Value::Flag(Flag::Of))
+        }
+        Mnemonic::Js => {
+            // sf = 1
+            Value::Flag(Flag::Sf)
+        }
+        Mnemonic::Jns => {
+            //  sf = 0
+            emit_not(ctx, Value::Flag(Flag::Sf))
+        }
+        _ => panic!("unknown ins: {ins}"),
+    };
+
+    Terminator::Cond {
+        cond,
+        then_bb: target,
+        else_bb: Value::Imm(Imm::U32(ins.next_ip32())),
+    }
+}
+
+fn emit_not(ctx: &mut LowerCtx, src: Value) -> Value {
+    let res = ctx.new_temp(Size::U1);
+    ctx.emit(Instr::Not { dst: res, src });
+    res
+}
+
+fn emit_bin(ctx: &mut LowerCtx, op: BinOp, lhs: Value, rhs: Value) -> Value {
+    let res = ctx.new_temp(Size::U1);
+    ctx.emit(Instr::BinOp {
+        op,
+        dst: res,
+        lhs,
+        rhs,
+    });
+    res
+}
+
+#[derive(Debug)]
+pub struct Block {
+    pub instr: Vec<AnnotatedInstr>,
+    pub terminator: AnnotatedTerminator,
+}
+
+impl std::fmt::Display for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for chunk in self.instr.chunk_by(|a, b| a.addr == b.addr) {
+            let (head, tail) = chunk.split_first().unwrap();
+
+            writeln!(f, "{}: {}", chunk[0].addr, head.ins)?;
+
+            for ins in tail {
+                writeln!(f, "          {}", ins.ins)?;
+            }
+        }
+
+        let last = self.instr.last().unwrap();
+        if last.addr == self.terminator.addr {
+            writeln!(f, "          {}", self.terminator.inner)?;
+        } else {
+            writeln!(f, "{}: {}", self.terminator.addr, self.terminator.inner)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminator> {
     ctx.set_addr(Addr(ins.ip32()));
     match ins.mnemonic() {
         Mnemonic::Push => lower_push(ctx, ins),
@@ -591,11 +774,28 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         Mnemonic::Xor => lower_xor(ctx, ins),
         Mnemonic::Mov => lower_mov(ctx, ins),
         Mnemonic::Cmp => lower_cmp(ctx, ins),
+        Mnemonic::Je // zf = 1
+        | Mnemonic::Jne // zf = 0
+        | Mnemonic::Ja // jump if above (unsigned) (cf = 0 and zf = 0)
+        | Mnemonic::Jae // jump if aboce or eq (unsigned) (cf = 0)
+        | Mnemonic::Jb // jump if below (unsigned) cf = 1
+        | Mnemonic::Jbe // jump if below or eq (unsigned) cf = 1 or zf = 1
+        | Mnemonic::Jg // jump if greater (signed) (zf = 0 and sf = of) 
+        | Mnemonic::Jge // jump if greater or equal (sf = of) 
+        | Mnemonic::Jl // jump if less (signed) (sf <> of) 
+        | Mnemonic::Jle // 	Jump if less or equal (signed) (zf = 1 or sf <> of)
+        | Mnemonic::Jo //  of = 1
+        | Mnemonic::Jno // of = 0
+        | Mnemonic::Js // sf = 1
+        | Mnemonic::Jns //  sf = 0
+            => return Some(lower_jmp_x(ctx, ins)),
+
         _ => {
             eprintln!("{}", ctx);
             panic!("unknown instruction: {} at {}", ins, Addr(ins.ip32()))
         }
     }
+    None
 }
 
 pub fn lower_block(code: &[u8], addr: Addr) -> Block {
@@ -604,8 +804,16 @@ pub fn lower_block(code: &[u8], addr: Addr) -> Block {
         iced_x86::Decoder::with_ip(32, code, addr.0.into(), iced_x86::DecoderOptions::NONE);
 
     for ins in decoder {
-        lower_ins(&mut ctx, &ins);
+        if let Some(terminator) = lower_ins(&mut ctx, &ins) {
+            return Block {
+                instr: ctx.instrs,
+                terminator: AnnotatedTerminator {
+                    addr: Addr(ins.ip32()),
+                    inner: terminator,
+                },
+            };
+        }
     }
 
-    Block { instr: ctx.instrs }
+    panic!("reached end of code")
 }
