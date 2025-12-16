@@ -2,10 +2,12 @@ pub mod addr;
 pub mod block_set;
 pub mod cfg;
 pub mod cfg_func;
+pub mod flat_ir;
 pub mod ins;
 pub mod new_cfg;
 pub mod obj;
 pub mod string;
+pub mod third_cfg;
 
 use std::borrow::Cow;
 

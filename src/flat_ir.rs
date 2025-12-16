@@ -1,0 +1,611 @@
+use iced_x86::{Mnemonic, OpKind};
+
+use crate::addr::Addr;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reg {
+    Eax,
+    Ebx,
+    Ecx,
+    Edx,
+    Esi,
+    Edi,
+    Ebp,
+    Esp,
+    Eip,
+}
+impl Reg {
+    fn size(&self) -> Option<Size> {
+        Some(Size::U32)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Flag {
+    /// Carry flag
+    Cf,
+    /// Zero flag
+    Zf,
+    /// Sign flag
+    Sf,
+    /// Overflow flag
+    Of,
+}
+
+impl std::fmt::Display for Flag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cf => write!(f, "cf"),
+            Self::Zf => write!(f, "zf"),
+            Self::Sf => write!(f, "sf"),
+            Self::Of => write!(f, "of"),
+        }
+    }
+}
+
+impl std::fmt::Display for Reg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Reg::Eax => write!(f, "eax"),
+            Reg::Ebx => write!(f, "ebx"),
+            Reg::Ecx => write!(f, "ecx"),
+            Reg::Edx => write!(f, "edx"),
+            Reg::Esi => write!(f, "esi"),
+            Reg::Edi => write!(f, "edi"),
+            Reg::Ebp => write!(f, "ebp"),
+            Reg::Esp => write!(f, "esp"),
+            Reg::Eip => write!(f, "eip"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TempId(u32);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Imm {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+}
+impl Imm {
+    fn size(&self) -> Option<Size> {
+        Some(match self {
+            Imm::U8(_) => Size::U8,
+            Imm::U16(_) => Size::U16,
+            Imm::U32(_) => Size::U32,
+        })
+    }
+}
+
+impl std::fmt::Display for Imm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Imm::U8(x) => write!(f, "0x{:02x}", x),
+            Imm::U16(x) => write!(f, "0x{:04x}", x),
+            Imm::U32(x) => write!(f, "0x{:08x}", x),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Size {
+    U8,
+    U16,
+    U32,
+}
+impl Size {
+    fn to_bytes(&self) -> u32 {
+        match self {
+            Size::U8 => 1,
+            Size::U16 => 2,
+            Size::U32 => 4,
+        }
+    }
+}
+
+impl std::fmt::Display for Size {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Size::U8 => write!(f, "u8"),
+            Size::U16 => write!(f, "u16"),
+            Size::U32 => write!(f, "u32"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Temp {
+    id: TempId,
+    size: Size,
+}
+
+impl std::fmt::Display for Temp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "t{}", self.id.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Value {
+    Reg(Reg),
+    Imm(Imm),
+    Temp(Temp),
+    Flag(Flag),
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Reg(reg) => write!(f, "{reg}"),
+            Value::Imm(x) => write!(f, "{x}"),
+            Value::Temp(x) => write!(f, "{x}"),
+            Value::Flag(flag) => write!(f, "{flag}"),
+        }
+    }
+}
+
+impl Value {
+    pub fn size(&self) -> Option<Size> {
+        match self {
+            Value::Reg(reg) => reg.size(),
+            Value::Imm(imm) => imm.size(),
+            Value::Temp(temp) => Some(temp.size),
+            Value::Flag(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemSpace {
+    /// normal memory
+    Default,
+    /// thread-local (TEB)
+    Fs,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Xor,
+    Mul,
+}
+
+impl std::fmt::Display for BinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinOp::Add => write!(f, "+"),
+            BinOp::Sub => write!(f, "-"),
+            BinOp::Mul => write!(f, "*"),
+            BinOp::Xor => write!(f, "xor"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Instr {
+    BinOp {
+        op: BinOp,
+        dst: Value,
+        lhs: Value,
+        rhs: Value,
+    },
+    Assign {
+        dst: Value,
+        src: Value,
+    },
+    Load {
+        dst: Value,
+        addr: Value,
+        space: MemSpace,
+    },
+    Store {
+        addr: Value,
+        src: Value,
+        space: MemSpace,
+    },
+    Call {
+        target: Value,
+    },
+
+    SetZeroFlag {
+        src: Value,
+    },
+
+    SetOverflowFlag {
+        op: BinOp,
+        lhs: Value,
+        rhs: Value,
+    },
+
+    SetCarryFlag {
+        op: BinOp,
+        lhs: Value,
+        rhs: Value,
+    },
+
+    SetSignFlag {
+        src: Value,
+    },
+}
+
+impl std::fmt::Display for Instr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::BinOp { op, dst, lhs, rhs } => write!(f, "{dst} = {lhs} {op} {rhs}"),
+            Self::Assign { dst, src } => write!(f, "{dst} = {src}"),
+            Self::Load { dst, addr, space } => {
+                let size = dst.size().unwrap();
+                write!(f, "{dst} = load {size} {addr}")?;
+                if *space == MemSpace::Fs {
+                    write!(f, " [fs]")?;
+                }
+                Ok(())
+            }
+            Self::Store { addr, src, space } => {
+                let size = src.size().unwrap();
+                write!(f, "[{addr}] <- store {size} {src}")?;
+                if *space == MemSpace::Fs {
+                    write!(f, " [fs]")?;
+                }
+                Ok(())
+            }
+            Self::Call { target } => {
+                write!(f, "call {target}")
+            }
+            Self::SetZeroFlag { src } => write!(f, "zf = is_zero {src}"),
+            Self::SetOverflowFlag { op, lhs, rhs } => {
+                write!(f, "of = is_overflow {lhs} {op} {rhs}")
+            }
+            Self::SetCarryFlag { op, lhs, rhs } => {
+                write!(f, "cf = is_carry {lhs} {op} {rhs}")
+            }
+            Self::SetSignFlag { src } => write!(f, "sf = sign {src}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AnnotatedInstr {
+    pub addr: Addr,
+    pub ins: Instr,
+}
+
+#[derive(Debug)]
+pub struct LowerCtx {
+    pub instrs: Vec<AnnotatedInstr>,
+    temps: Vec<Temp>,
+    addr: Addr,
+}
+
+impl std::fmt::Display for LowerCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for chunk in self.instrs.chunk_by(|a, b| a.addr == b.addr) {
+            let (head, tail) = chunk.split_first().unwrap();
+
+            writeln!(f, "{}: {}", chunk[0].addr, head.ins)?;
+
+            for ins in tail {
+                writeln!(f, "          {}", ins.ins)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl LowerCtx {
+    pub fn new() -> Self {
+        Self {
+            instrs: Vec::new(),
+            temps: Vec::new(),
+            addr: Addr(0),
+        }
+    }
+
+    fn new_temp(&mut self, size: Size) -> Value {
+        let id = self.temps.len() as u32;
+        self.temps.push(Temp {
+            id: TempId(id),
+            size,
+        });
+        Value::Temp(Temp {
+            id: TempId(id),
+            size,
+        })
+    }
+
+    fn emit(&mut self, ins: Instr) {
+        self.instrs.push(AnnotatedInstr {
+            ins,
+            addr: self.addr,
+        });
+    }
+
+    fn set_addr(&mut self, addr: Addr) {
+        self.addr = addr;
+    }
+}
+
+fn map_reg(reg: iced_x86::Register) -> Option<Reg> {
+    use iced_x86::Register as R;
+    match reg {
+        R::EAX => Some(Reg::Eax),
+        R::EBX => Some(Reg::Ebx),
+        R::ECX => Some(Reg::Ecx),
+        R::EDX => Some(Reg::Edx),
+        R::ESI => Some(Reg::Esi),
+        R::EDI => Some(Reg::Edi),
+        R::EBP => Some(Reg::Ebp),
+        R::ESP => Some(Reg::Esp),
+        _ => None,
+    }
+}
+
+fn mem_space(ins: &iced_x86::Instruction) -> MemSpace {
+    match ins.memory_segment() {
+        iced_x86::Register::FS => MemSpace::Fs,
+        _ => MemSpace::Default,
+    }
+}
+
+fn map_reg_unwrap(reg: iced_x86::Register) -> Reg {
+    match map_reg(reg) {
+        Some(ok) => ok,
+        None => panic!("failed to convert: {reg:?}"),
+    }
+}
+
+fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpace, Value) {
+    let scaled: Option<Value> = if ins.memory_index() == iced_x86::Register::None {
+        None
+    } else {
+        let idx = Value::Reg(map_reg_unwrap(ins.memory_index()));
+        let scale = ins.memory_index_scale();
+
+        Some(if scale == 1 {
+            idx
+        } else {
+            let scaled = ctx.new_temp(Size::U32);
+            ctx.emit(Instr::BinOp {
+                op: BinOp::Mul,
+                dst: scaled.clone(),
+                lhs: idx,
+                rhs: Value::Imm(Imm::U32(scale)),
+            });
+            scaled
+        })
+    };
+
+    let scaled_and_base = if ins.memory_base() != iced_x86::Register::None {
+        let base = Value::Reg(map_reg_unwrap(ins.memory_base()));
+        Some(if let Some(scaled) = scaled {
+            let scaled_and_base = ctx.new_temp(Size::U32);
+            ctx.emit(Instr::BinOp {
+                op: BinOp::Add,
+                dst: scaled_and_base,
+                lhs: scaled,
+                rhs: base,
+            });
+            scaled_and_base
+        } else {
+            base
+        })
+    } else {
+        scaled
+    };
+
+    let disp = ins.memory_displacement32();
+    let result = if disp != 0 {
+        let disp = Value::Imm(Imm::U32(disp));
+
+        Some(if let Some(scaled_and_base) = scaled_and_base {
+            let res = ctx.new_temp(Size::U32);
+            ctx.emit(Instr::BinOp {
+                op: BinOp::Add,
+                dst: res,
+                lhs: scaled_and_base,
+                rhs: disp,
+            });
+            res
+        } else {
+            disp
+        })
+    } else {
+        scaled_and_base
+    };
+
+    let Some(result) = result else {
+        dbg!(ins.memory_base());
+        dbg!(ins.memory_index());
+        dbg!(ins.memory_displacement32());
+        panic!("cannot create mov: {ins}");
+    };
+
+    (mem_space(ins), result)
+}
+
+fn memory_size_to_size(memory_size: iced_x86::MemorySize) -> Size {
+    match memory_size {
+        iced_x86::MemorySize::UInt8 => Size::U8,
+        iced_x86::MemorySize::UInt16 => Size::U16,
+        iced_x86::MemorySize::UInt32 => Size::U32,
+        x => panic!("unknown memory size: {x:?}"),
+    }
+}
+
+fn lower_memory(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Value {
+    let size = memory_size_to_size(ins.memory_size());
+    let (space, addr) = lower_mem_operand(ctx, ins);
+    let tmp = ctx.new_temp(size);
+
+    ctx.emit(Instr::Load {
+        dst: tmp.clone(),
+        addr,
+        space,
+    });
+    tmp
+}
+
+fn lower_mov(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    use iced_x86::OpKind;
+
+    match (ins.op0_kind(), ins.op1_kind()) {
+        (OpKind::Register, OpKind::Register) => {
+            let dst = Value::Reg(map_reg(ins.op0_register()).unwrap());
+            let src = Value::Reg(map_reg(ins.op1_register()).unwrap());
+            ctx.emit(Instr::Assign { dst, src });
+        }
+        (OpKind::Register, OpKind::Memory) => {
+            let dst = Value::Reg(map_reg(ins.op0_register()).unwrap());
+            let tmp = lower_memory(ctx, ins);
+            ctx.emit(Instr::Assign { dst, src: tmp });
+        }
+
+        (OpKind::Memory, OpKind::Register) => {
+            let (space, addr) = lower_mem_operand(ctx, ins);
+            let src = Value::Reg(map_reg(ins.op1_register()).unwrap());
+
+            ctx.emit(Instr::Store { addr, src, space });
+        }
+
+        _ => unimplemented!("unsupported MOV form: {ins:?}"),
+    }
+}
+
+fn lower_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, operand: u32) -> Value {
+    match ins.op_kind(operand) {
+        OpKind::Register => Value::Reg(map_reg_unwrap(ins.op_register(operand))),
+        OpKind::Immediate8 => Value::Imm(Imm::U8(ins.immediate8())),
+        OpKind::Immediate16 => Value::Imm(Imm::U16(ins.immediate16())),
+        OpKind::Immediate32 => Value::Imm(Imm::U32(ins.immediate32())),
+        OpKind::Immediate8to16 => Value::Imm(Imm::U16(ins.immediate8to16() as _)),
+        OpKind::Immediate8to32 => Value::Imm(Imm::U32(ins.immediate8to32() as _)),
+        OpKind::NearBranch32 => Value::Imm(Imm::U32(ins.near_branch32())),
+        OpKind::Memory => lower_memory(ctx, ins),
+        x => panic!(
+            "unknown kind: {x:?} in instruction {} at {}",
+            ins,
+            Addr(ins.ip32())
+        ),
+    }
+}
+
+fn lower_push(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let value = lower_operand(ctx, ins, 0);
+
+    let esp = Value::Reg(Reg::Esp);
+    let tmp = ctx.new_temp(Size::U32);
+
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Sub,
+        dst: tmp,
+        lhs: esp.clone(),
+        rhs: Value::Imm(Imm::U32(value.size().unwrap().to_bytes())),
+    });
+
+    ctx.emit(Instr::Store {
+        addr: tmp,
+        src: value,
+        space: MemSpace::Default,
+    });
+
+    ctx.emit(Instr::Assign { dst: esp, src: tmp });
+}
+
+fn lower_call(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let target = lower_operand(ctx, ins, 0);
+    ctx.emit(Instr::Call { target });
+}
+
+fn bin_size(lhs: &Value, rhs: &Value) -> Size {
+    let lhs = lhs.size().unwrap();
+    let rhs = rhs.size().unwrap();
+    if lhs == rhs {
+        lhs
+    } else {
+        panic!("Different sizes: {lhs} and {rhs}")
+    }
+}
+
+fn lower_xor(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let lhs = lower_operand(ctx, ins, 0);
+    let rhs = lower_operand(ctx, ins, 1);
+
+    let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Xor,
+        dst: tmp,
+        lhs,
+        rhs,
+    });
+    ctx.emit(Instr::Assign {
+        dst: Value::Flag(Flag::Of),
+        src: Value::Imm(Imm::U8(0)),
+    });
+    ctx.emit(Instr::Assign {
+        dst: Value::Flag(Flag::Cf),
+        src: Value::Imm(Imm::U8(0)),
+    });
+    ctx.emit(Instr::SetZeroFlag { src: tmp });
+    ctx.emit(Instr::SetSignFlag { src: tmp });
+
+    ctx.emit(Instr::Assign { dst: lhs, src: tmp });
+}
+
+fn lower_cmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let lhs = lower_operand(ctx, ins, 0);
+    let rhs = lower_operand(ctx, ins, 1);
+
+    let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Sub,
+        dst: tmp,
+        lhs,
+        rhs,
+    });
+
+    ctx.emit(Instr::SetOverflowFlag {
+        op: BinOp::Sub,
+        lhs,
+        rhs,
+    });
+    ctx.emit(Instr::SetCarryFlag {
+        op: BinOp::Sub,
+        lhs,
+        rhs,
+    });
+    ctx.emit(Instr::SetZeroFlag { src: tmp });
+    ctx.emit(Instr::SetSignFlag { src: tmp });
+}
+
+pub struct Block {
+    instr: Vec<AnnotatedInstr>,
+}
+
+fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    ctx.set_addr(Addr(ins.ip32()));
+    match ins.mnemonic() {
+        Mnemonic::Push => lower_push(ctx, ins),
+        Mnemonic::Call => lower_call(ctx, ins),
+        Mnemonic::Xor => lower_xor(ctx, ins),
+        Mnemonic::Mov => lower_mov(ctx, ins),
+        Mnemonic::Cmp => lower_cmp(ctx, ins),
+        _ => {
+            eprintln!("{}", ctx);
+            panic!("unknown instruction: {} at {}", ins, Addr(ins.ip32()))
+        }
+    }
+}
+
+pub fn lower_block(code: &[u8], addr: Addr) -> Block {
+    let mut ctx = LowerCtx::new();
+    let decoder =
+        iced_x86::Decoder::with_ip(32, code, addr.0.into(), iced_x86::DecoderOptions::NONE);
+
+    for ins in decoder {
+        lower_ins(&mut ctx, &ins);
+    }
+
+    Block { instr: ctx.instrs }
+}

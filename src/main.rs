@@ -9,7 +9,7 @@ use instr::{
     ins::{Instruction, Op, parse_instruction},
     instruction_signature, instruction_signature_full, new_cfg,
     obj::{self, ObjDatabase, Object, ObjectTyp},
-    parse_binary,
+    parse_binary, third_cfg,
 };
 
 struct CountBlocks {
@@ -90,6 +90,8 @@ fn main() {
     for lib in &binary.imports {
         obj::fill_database_with_import(&mut db, lib);
     }
+
+    third_cfg::walk_code_blocks(binary.sections.text, binary.entry_point);
 
     let funcs_from_start = new_cfg::walk_code_blocks(&db, binary.sections.text, binary.entry_point);
     new_cfg::derive_functions(&db, &funcs_from_start.values().cloned().collect::<Vec<_>>());
