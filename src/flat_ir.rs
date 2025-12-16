@@ -616,8 +616,8 @@ impl std::fmt::Display for Terminator {
 
 #[derive(Debug, Clone)]
 pub struct AnnotatedTerminator {
-    addr: Addr,
-    inner: Terminator,
+    pub addr: Addr,
+    pub inner: Terminator,
 }
 
 fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
@@ -739,6 +739,7 @@ fn emit_bin(ctx: &mut LowerCtx, op: BinOp, lhs: Value, rhs: Value) -> Value {
 
 #[derive(Debug)]
 pub struct Block {
+    pub addr: Addr,
     pub instr: Vec<AnnotatedInstr>,
     pub terminator: AnnotatedTerminator,
 }
@@ -798,14 +799,19 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
     None
 }
 
-pub fn lower_block(code: &[u8], addr: Addr) -> Block {
+pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
     let mut ctx = LowerCtx::new();
-    let decoder =
-        iced_x86::Decoder::with_ip(32, code, addr.0.into(), iced_x86::DecoderOptions::NONE);
+    let decoder = iced_x86::Decoder::with_ip(
+        32,
+        code,
+        block_addr.0.into(),
+        iced_x86::DecoderOptions::NONE,
+    );
 
     for ins in decoder {
         if let Some(terminator) = lower_ins(&mut ctx, &ins) {
             return Block {
+                addr: block_addr,
                 instr: ctx.instrs,
                 terminator: AnnotatedTerminator {
                     addr: Addr(ins.ip32()),
