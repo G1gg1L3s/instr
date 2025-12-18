@@ -448,17 +448,25 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
     (mem_space(ins), result)
 }
 
-fn memory_size_to_size(memory_size: iced_x86::MemorySize) -> Size {
+fn memory_size_to_size(memory_size: iced_x86::MemorySize) -> Option<Size> {
     match memory_size {
-        iced_x86::MemorySize::UInt8 => Size::U8,
-        iced_x86::MemorySize::UInt16 => Size::U16,
-        iced_x86::MemorySize::UInt32 => Size::U32,
-        x => panic!("unknown memory size: {x:?}"),
+        iced_x86::MemorySize::UInt8 => Some(Size::U8),
+        iced_x86::MemorySize::UInt16 => Some(Size::U16),
+        iced_x86::MemorySize::UInt32 => Some(Size::U32),
+        iced_x86::MemorySize::DwordOffset => Some(Size::U32),
+        _ => None,
     }
 }
 
 fn lower_memory(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Operand {
-    let size = memory_size_to_size(ins.memory_size());
+    let Some(size) = memory_size_to_size(ins.memory_size()) else {
+        panic!(
+            "Unknown memory size: {:?} for {} at {}",
+            ins.memory_size(),
+            ins,
+            Addr(ins.ip32())
+        )
+    };
     let (space, addr) = lower_mem_operand(ctx, ins);
     Operand::Memory { addr, space, size }
 }
@@ -671,6 +679,9 @@ pub enum Terminator {
         then_bb: Value,
         else_bb: Value,
     },
+    Jump {
+        target: Value,
+    },
 }
 
 impl std::fmt::Display for Terminator {
@@ -680,7 +691,8 @@ impl std::fmt::Display for Terminator {
                 cond,
                 then_bb,
                 else_bb,
-            } => write!(f, "if {cond} then jmp {then_bb} else jmp {else_bb}"),
+            } => write!(f, "if {cond} then {then_bb} else {else_bb}"),
+            Self::Jump { target } => write!(f, "jump {target}"),
         }
     }
 }
@@ -791,6 +803,11 @@ fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     }
 }
 
+fn lower_jmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
+    let target = lower_operand_load(ctx, ins, 0).lower_load(ctx);
+    Terminator::Jump { target }
+}
+
 fn emit_not(ctx: &mut LowerCtx, src: Value) -> Value {
     let res = ctx.new_temp(Size::U1);
     ctx.emit(Instr::Not { dst: res, src });
@@ -861,6 +878,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         | Mnemonic::Js // sf = 1
         | Mnemonic::Jns //  sf = 0
             => return Some(lower_jmp_x(ctx, ins)),
+
+        Mnemonic::Jmp => return Some(lower_jmp(ctx, ins)),
 
         Mnemonic::Add => lower_bin_set_flags(ctx, ins, BinOp::Add),
         Mnemonic::Sub => lower_bin_set_flags(ctx, ins, BinOp::Sub),

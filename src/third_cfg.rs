@@ -23,6 +23,11 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) {
                     to_visit.push(Addr(u32));
                 }
             }
+            flat_ir::Terminator::Jump { target } => {
+                if let Value::Imm(Imm::U32(u32)) = target {
+                    to_visit.push(Addr(u32));
+                }
+            }
         }
     }
 }
