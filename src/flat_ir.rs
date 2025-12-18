@@ -672,6 +672,29 @@ fn lower_xor(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
+fn lower_or(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    lower_bin_operation(ctx, ins, |ctx, _ins, lhs, rhs| {
+        let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
+        ctx.emit(Instr::BinOp {
+            op: BinOp::BitOr,
+            dst: tmp,
+            lhs,
+            rhs,
+        });
+        ctx.emit(Instr::Assign {
+            dst: Value::Flag(Flag::Of),
+            src: Value::Imm(Imm::U8(0)),
+        });
+        ctx.emit(Instr::Assign {
+            dst: Value::Flag(Flag::Cf),
+            src: Value::Imm(Imm::U8(0)),
+        });
+        ctx.emit(Instr::SetZeroFlag { src: tmp });
+        ctx.emit(Instr::SetSignFlag { src: tmp });
+        tmp
+    });
+}
+
 fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
     lower_bin_operation(ctx, ins, |ctx, _ins, lhs, rhs| {
         let res = ctx.new_temp(bin_size(&lhs, &rhs));
@@ -905,7 +928,6 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Push => lower_push(ctx, ins),
         Mnemonic::Pop => lower_pop(ctx, ins),
         Mnemonic::Call => lower_call(ctx, ins),
-        Mnemonic::Xor => lower_xor(ctx, ins),
         Mnemonic::Mov | Mnemonic::Movzx => lower_mov(ctx, ins),
         Mnemonic::Cmp => lower_cmp(ctx, ins),
         Mnemonic::Je // zf = 1
@@ -928,6 +950,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
 
         Mnemonic::Add => lower_bin_set_flags(ctx, ins, BinOp::Add),
         Mnemonic::Sub => lower_bin_set_flags(ctx, ins, BinOp::Sub),
+        Mnemonic::Or => lower_or(ctx, ins),
+        Mnemonic::Xor => lower_xor(ctx, ins),
 
         _ => {
             eprintln!("{}", ctx);
