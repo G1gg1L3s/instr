@@ -241,6 +241,11 @@ pub enum Instr {
         dst: Value,
         src: Value,
     },
+
+    ZeroExtend {
+        dst: Value,
+        src: Value,
+    },
 }
 
 impl std::fmt::Display for Instr {
@@ -276,6 +281,10 @@ impl std::fmt::Display for Instr {
             }
             Self::SetSignFlag { src } => write!(f, "sf = sign {src}"),
             Self::Not { dst, src } => write!(f, "{dst} = not {src}"),
+            Self::ZeroExtend { dst, src } => {
+                let dst_size = dst.size().unwrap();
+                write!(f, "{dst} = zero_extend {dst_size} {src}")
+            }
         }
     }
 }
@@ -455,7 +464,16 @@ fn lower_memory(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Operand {
 }
 
 fn lower_mov(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    lower_bin_operation(ctx, ins, |_ctx, _ins, _lhs, rhs| rhs);
+    lower_bin_operation(ctx, ins, |ctx, ins, lhs, rhs| {
+        if ins.mnemonic() == Mnemonic::Movzx {
+            let target_size = lhs.size().unwrap();
+            let res = ctx.new_temp(target_size);
+            ctx.emit(Instr::ZeroExtend { dst: res, src: rhs });
+            res
+        } else {
+            rhs
+        }
+    });
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -826,7 +844,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Push => lower_push(ctx, ins),
         Mnemonic::Call => lower_call(ctx, ins),
         Mnemonic::Xor => lower_xor(ctx, ins),
-        Mnemonic::Mov => lower_mov(ctx, ins),
+        Mnemonic::Mov | Mnemonic::Movzx => lower_mov(ctx, ins),
         Mnemonic::Cmp => lower_cmp(ctx, ins),
         Mnemonic::Je // zf = 1
         | Mnemonic::Jne // zf = 0
