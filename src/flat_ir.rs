@@ -372,10 +372,10 @@ fn mem_space(ins: &iced_x86::Instruction) -> MemSpace {
     }
 }
 
-fn map_reg_unwrap(reg: iced_x86::Register) -> Reg {
+fn map_reg_unwrap(reg: iced_x86::Register, addr: Addr) -> Reg {
     match map_reg(reg) {
         Some(ok) => ok,
-        None => panic!("failed to convert: {reg:?}"),
+        None => panic!("failed to convert: {reg:?} at {addr}"),
     }
 }
 
@@ -383,7 +383,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
     let scaled: Option<Value> = if ins.memory_index() == iced_x86::Register::None {
         None
     } else {
-        let idx = Value::Reg(map_reg_unwrap(ins.memory_index()));
+        let idx = Value::Reg(map_reg_unwrap(ins.memory_index(), Addr(ins.ip32())));
         let scale = ins.memory_index_scale();
 
         Some(if scale == 1 {
@@ -401,7 +401,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
     };
 
     let scaled_and_base = if ins.memory_base() != iced_x86::Register::None {
-        let base = Value::Reg(map_reg_unwrap(ins.memory_base()));
+        let base = Value::Reg(map_reg_unwrap(ins.memory_base(), Addr(ins.ip32())));
         Some(if let Some(scaled) = scaled {
             let scaled_and_base = ctx.new_temp(Size::U32);
             ctx.emit(Instr::BinOp {
@@ -539,7 +539,9 @@ impl Operand {
 
 fn lower_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, operand: u32) -> Operand {
     match ins.op_kind(operand) {
-        OpKind::Register => Operand::Reg(map_reg_unwrap(ins.op_register(operand))),
+        OpKind::Register => {
+            Operand::Reg(map_reg_unwrap(ins.op_register(operand), Addr(ins.ip32())))
+        }
         OpKind::Immediate8 => Operand::Imm(Imm::U8(ins.immediate8())),
         OpKind::Immediate16 => Operand::Imm(Imm::U16(ins.immediate16())),
         OpKind::Immediate32 => Operand::Imm(Imm::U32(ins.immediate32())),
