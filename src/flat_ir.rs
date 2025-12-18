@@ -448,54 +448,78 @@ fn memory_size_to_size(memory_size: iced_x86::MemorySize) -> Size {
     }
 }
 
-fn lower_memory(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Value {
+fn lower_memory(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Operand {
     let size = memory_size_to_size(ins.memory_size());
     let (space, addr) = lower_mem_operand(ctx, ins);
-    let tmp = ctx.new_temp(size);
-
-    ctx.emit(Instr::Load {
-        dst: tmp.clone(),
-        addr,
-        space,
-    });
-    tmp
+    Operand::Memory { addr, space, size }
 }
 
 fn lower_mov(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    use iced_x86::OpKind;
+    lower_bin_operation(ctx, ins, |_ctx, _ins, _lhs, rhs| rhs);
+}
 
-    match (ins.op0_kind(), ins.op1_kind()) {
-        (OpKind::Register, OpKind::Register) => {
-            let dst = Value::Reg(map_reg(ins.op0_register()).unwrap());
-            let src = Value::Reg(map_reg(ins.op1_register()).unwrap());
-            ctx.emit(Instr::Assign { dst, src });
+#[derive(Debug, Clone, Copy)]
+enum Operand {
+    Reg(Reg),
+    Imm(Imm),
+    Memory {
+        addr: Value,
+        space: MemSpace,
+        size: Size,
+    },
+}
+
+impl Operand {
+    fn lower_load(self, ctx: &mut LowerCtx) -> Value {
+        match self {
+            Operand::Reg(reg) => Value::Reg(reg),
+            Operand::Imm(imm) => Value::Imm(imm),
+            Operand::Memory { addr, space, size } => {
+                let tmp = ctx.new_temp(size);
+
+                ctx.emit(Instr::Load {
+                    dst: tmp.clone(),
+                    addr,
+                    space,
+                });
+                tmp
+            }
         }
-        (OpKind::Register, OpKind::Memory) => {
-            let dst = Value::Reg(map_reg(ins.op0_register()).unwrap());
-            let tmp = lower_memory(ctx, ins);
-            ctx.emit(Instr::Assign { dst, src: tmp });
+    }
+
+    fn lower_store(self, ctx: &mut LowerCtx, value: Value) {
+        match self {
+            Operand::Reg(reg) => {
+                ctx.emit(Instr::Assign {
+                    dst: Value::Reg(reg),
+                    src: value,
+                });
+            }
+            Operand::Imm(_) => panic!("cannot assign to immediate value"),
+            Operand::Memory {
+                addr,
+                space,
+                size: _,
+            } => {
+                ctx.emit(Instr::Store {
+                    addr,
+                    src: value,
+                    space,
+                });
+            }
         }
-
-        (OpKind::Memory, OpKind::Register) => {
-            let (space, addr) = lower_mem_operand(ctx, ins);
-            let src = Value::Reg(map_reg(ins.op1_register()).unwrap());
-
-            ctx.emit(Instr::Store { addr, src, space });
-        }
-
-        _ => unimplemented!("unsupported MOV form: {ins:?}"),
     }
 }
 
-fn lower_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, operand: u32) -> Value {
+fn lower_operand_load(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, operand: u32) -> Operand {
     match ins.op_kind(operand) {
-        OpKind::Register => Value::Reg(map_reg_unwrap(ins.op_register(operand))),
-        OpKind::Immediate8 => Value::Imm(Imm::U8(ins.immediate8())),
-        OpKind::Immediate16 => Value::Imm(Imm::U16(ins.immediate16())),
-        OpKind::Immediate32 => Value::Imm(Imm::U32(ins.immediate32())),
-        OpKind::Immediate8to16 => Value::Imm(Imm::U16(ins.immediate8to16() as _)),
-        OpKind::Immediate8to32 => Value::Imm(Imm::U32(ins.immediate8to32() as _)),
-        OpKind::NearBranch32 => Value::Imm(Imm::U32(ins.near_branch32())),
+        OpKind::Register => Operand::Reg(map_reg_unwrap(ins.op_register(operand))),
+        OpKind::Immediate8 => Operand::Imm(Imm::U8(ins.immediate8())),
+        OpKind::Immediate16 => Operand::Imm(Imm::U16(ins.immediate16())),
+        OpKind::Immediate32 => Operand::Imm(Imm::U32(ins.immediate32())),
+        OpKind::Immediate8to16 => Operand::Imm(Imm::U16(ins.immediate8to16() as _)),
+        OpKind::Immediate8to32 => Operand::Imm(Imm::U32(ins.immediate8to32() as _)),
+        OpKind::NearBranch32 => Operand::Imm(Imm::U32(ins.near_branch32())),
         OpKind::Memory => lower_memory(ctx, ins),
         x => panic!(
             "unknown kind: {x:?} in instruction {} at {}",
@@ -505,8 +529,21 @@ fn lower_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, operand: u32) 
     }
 }
 
+fn lower_bin_operation(
+    ctx: &mut LowerCtx,
+    ins: &iced_x86::Instruction,
+    bin_lower: impl FnOnce(&mut LowerCtx, &iced_x86::Instruction, Value, Value) -> Value,
+) {
+    let lhs = lower_operand_load(ctx, ins, 0);
+    let lhs_loaded = lhs.clone().lower_load(ctx);
+    let rhs = lower_operand_load(ctx, ins, 1).lower_load(ctx);
+
+    let result = bin_lower(ctx, ins, lhs_loaded, rhs);
+    lhs.lower_store(ctx, result);
+}
+
 fn lower_push(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let value = lower_operand(ctx, ins, 0);
+    let value = lower_operand_load(ctx, ins, 0).lower_load(ctx);
 
     let esp = Value::Reg(Reg::Esp);
     let tmp = ctx.new_temp(Size::U32);
@@ -528,7 +565,7 @@ fn lower_push(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 }
 
 fn lower_call(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let target = lower_operand(ctx, ins, 0);
+    let target = lower_operand_load(ctx, ins, 0).lower_load(ctx);
     ctx.emit(Instr::Call { target });
 }
 
@@ -543,33 +580,49 @@ fn bin_size(lhs: &Value, rhs: &Value) -> Size {
 }
 
 fn lower_xor(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let lhs = lower_operand(ctx, ins, 0);
-    let rhs = lower_operand(ctx, ins, 1);
+    lower_bin_operation(ctx, ins, |ctx, _ins, lhs, rhs| {
+        let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
+        ctx.emit(Instr::BinOp {
+            op: BinOp::Xor,
+            dst: tmp,
+            lhs,
+            rhs,
+        });
+        ctx.emit(Instr::Assign {
+            dst: Value::Flag(Flag::Of),
+            src: Value::Imm(Imm::U8(0)),
+        });
+        ctx.emit(Instr::Assign {
+            dst: Value::Flag(Flag::Cf),
+            src: Value::Imm(Imm::U8(0)),
+        });
+        ctx.emit(Instr::SetZeroFlag { src: tmp });
+        ctx.emit(Instr::SetSignFlag { src: tmp });
+        tmp
+    });
+}
 
-    let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
-    ctx.emit(Instr::BinOp {
-        op: BinOp::Xor,
-        dst: tmp,
-        lhs,
-        rhs,
-    });
-    ctx.emit(Instr::Assign {
-        dst: Value::Flag(Flag::Of),
-        src: Value::Imm(Imm::U8(0)),
-    });
-    ctx.emit(Instr::Assign {
-        dst: Value::Flag(Flag::Cf),
-        src: Value::Imm(Imm::U8(0)),
-    });
-    ctx.emit(Instr::SetZeroFlag { src: tmp });
-    ctx.emit(Instr::SetSignFlag { src: tmp });
+fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
+    lower_bin_operation(ctx, ins, |ctx, _ins, lhs, rhs| {
+        let res = ctx.new_temp(bin_size(&lhs, &rhs));
+        ctx.emit(Instr::BinOp {
+            op,
+            dst: res,
+            lhs,
+            rhs,
+        });
 
-    ctx.emit(Instr::Assign { dst: lhs, src: tmp });
+        ctx.emit(Instr::SetCarryFlag { op, lhs, rhs });
+        ctx.emit(Instr::SetOverflowFlag { op, lhs, rhs });
+        ctx.emit(Instr::SetZeroFlag { src: res });
+        ctx.emit(Instr::SetSignFlag { src: res });
+        res
+    });
 }
 
 fn lower_cmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let lhs = lower_operand(ctx, ins, 0);
-    let rhs = lower_operand(ctx, ins, 1);
+    let lhs = lower_operand_load(ctx, ins, 0).lower_load(ctx);
+    let rhs = lower_operand_load(ctx, ins, 1).lower_load(ctx);
 
     let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
     ctx.emit(Instr::BinOp {
@@ -621,7 +674,7 @@ pub struct AnnotatedTerminator {
 }
 
 fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
-    let target = lower_operand(ctx, ins, 0);
+    let target = lower_operand_load(ctx, ins, 0).lower_load(ctx);
 
     let cond = match ins.mnemonic() {
         Mnemonic::Je => Value::Flag(Flag::Zf),
@@ -790,6 +843,9 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         | Mnemonic::Js // sf = 1
         | Mnemonic::Jns //  sf = 0
             => return Some(lower_jmp_x(ctx, ins)),
+
+        Mnemonic::Add => lower_bin_set_flags(ctx, ins, BinOp::Add),
+        Mnemonic::Sub => lower_bin_set_flags(ctx, ins, BinOp::Sub),
 
         _ => {
             eprintln!("{}", ctx);
