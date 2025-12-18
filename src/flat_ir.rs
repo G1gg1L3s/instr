@@ -537,7 +537,7 @@ impl Operand {
     }
 }
 
-fn lower_operand_load(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, operand: u32) -> Operand {
+fn lower_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, operand: u32) -> Operand {
     match ins.op_kind(operand) {
         OpKind::Register => Operand::Reg(map_reg_unwrap(ins.op_register(operand))),
         OpKind::Immediate8 => Operand::Imm(Imm::U8(ins.immediate8())),
@@ -560,38 +560,82 @@ fn lower_bin_operation(
     ins: &iced_x86::Instruction,
     bin_lower: impl FnOnce(&mut LowerCtx, &iced_x86::Instruction, Value, Value) -> Value,
 ) {
-    let lhs = lower_operand_load(ctx, ins, 0);
+    let lhs = lower_operand(ctx, ins, 0);
     let lhs_loaded = lhs.clone().lower_load(ctx);
-    let rhs = lower_operand_load(ctx, ins, 1).lower_load(ctx);
+    let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
 
     let result = bin_lower(ctx, ins, lhs_loaded, rhs);
     lhs.lower_store(ctx, result);
 }
 
 fn lower_push(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let value = lower_operand_load(ctx, ins, 0).lower_load(ctx);
+    let value = lower_operand(ctx, ins, 0).lower_load(ctx);
 
     let esp = Value::Reg(Reg::Esp);
-    let tmp = ctx.new_temp(Size::U32);
+    let new_esp = ctx.new_temp(Size::U32);
 
     ctx.emit(Instr::BinOp {
         op: BinOp::Sub,
-        dst: tmp,
+        dst: new_esp,
         lhs: esp.clone(),
         rhs: Value::Imm(Imm::U32(value.size().unwrap().to_bytes().unwrap())),
     });
 
     ctx.emit(Instr::Store {
-        addr: tmp,
+        addr: new_esp,
         src: value,
         space: MemSpace::Default,
     });
 
-    ctx.emit(Instr::Assign { dst: esp, src: tmp });
+    ctx.emit(Instr::Assign {
+        dst: esp,
+        src: new_esp,
+    });
+}
+
+fn lower_pop(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let dst = lower_operand(ctx, ins, 0);
+
+    let size = match &dst {
+        Operand::Reg(r) => r.size().unwrap(),
+        Operand::Memory { size, .. } => *size,
+        Operand::Imm(_) => unreachable!(),
+    };
+
+    let byte_count = size.to_bytes().unwrap();
+
+    let esp = Value::Reg(Reg::Esp);
+    let old_esp = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::Assign {
+        dst: old_esp,
+        src: esp.clone(),
+    });
+
+    let value = ctx.new_temp(size);
+    ctx.emit(Instr::Load {
+        dst: value,
+        addr: old_esp,
+        space: MemSpace::Default,
+    });
+
+    dst.lower_store(ctx, value);
+
+    let new_esp = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Add,
+        dst: new_esp,
+        lhs: esp.clone(),
+        rhs: Value::Imm(Imm::U32(byte_count)),
+    });
+
+    ctx.emit(Instr::Assign {
+        dst: esp,
+        src: new_esp,
+    });
 }
 
 fn lower_call(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let target = lower_operand_load(ctx, ins, 0).lower_load(ctx);
+    let target = lower_operand(ctx, ins, 0).lower_load(ctx);
     ctx.emit(Instr::Call { target });
 }
 
@@ -647,8 +691,8 @@ fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
 }
 
 fn lower_cmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let lhs = lower_operand_load(ctx, ins, 0).lower_load(ctx);
-    let rhs = lower_operand_load(ctx, ins, 1).lower_load(ctx);
+    let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+    let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
 
     let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
     ctx.emit(Instr::BinOp {
@@ -704,7 +748,7 @@ pub struct AnnotatedTerminator {
 }
 
 fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
-    let target = lower_operand_load(ctx, ins, 0).lower_load(ctx);
+    let target = lower_operand(ctx, ins, 0).lower_load(ctx);
 
     let cond = match ins.mnemonic() {
         Mnemonic::Je => Value::Flag(Flag::Zf),
@@ -804,7 +848,7 @@ fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
 }
 
 fn lower_jmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
-    let target = lower_operand_load(ctx, ins, 0).lower_load(ctx);
+    let target = lower_operand(ctx, ins, 0).lower_load(ctx);
     Terminator::Jump { target }
 }
 
@@ -859,6 +903,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
     ctx.set_addr(Addr(ins.ip32()));
     match ins.mnemonic() {
         Mnemonic::Push => lower_push(ctx, ins),
+        Mnemonic::Pop => lower_pop(ctx, ins),
         Mnemonic::Call => lower_call(ctx, ins),
         Mnemonic::Xor => lower_xor(ctx, ins),
         Mnemonic::Mov | Mnemonic::Movzx => lower_mov(ctx, ins),
