@@ -875,6 +875,16 @@ fn lower_jmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     Terminator::Jump { target }
 }
 
+fn lower_lea(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+    let (_, addr) = lower_mem_operand(ctx, ins);
+
+    ctx.emit(Instr::Assign {
+        dst: lhs,
+        src: addr,
+    });
+}
+
 fn emit_not(ctx: &mut LowerCtx, src: Value) -> Value {
     let res = ctx.new_temp(Size::U1);
     ctx.emit(Instr::Not { dst: res, src });
@@ -952,6 +962,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Sub => lower_bin_set_flags(ctx, ins, BinOp::Sub),
         Mnemonic::Or => lower_or(ctx, ins),
         Mnemonic::Xor => lower_xor(ctx, ins),
+
+        Mnemonic::Lea => lower_lea(ctx, ins),
 
         _ => {
             eprintln!("{}", ctx);
