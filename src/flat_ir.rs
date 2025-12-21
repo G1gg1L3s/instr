@@ -474,6 +474,11 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
         scaled_and_base
     };
 
+    let memspace = mem_space(ins);
+    if result.is_none() && memspace != MemSpace::Default {
+        return (memspace, Value::Imm(Imm::U32(0)));
+    }
+
     let Some(result) = result else {
         dbg!(ins.memory_base());
         dbg!(ins.memory_index());
@@ -481,7 +486,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
         panic!("cannot create mov: {ins}");
     };
 
-    (mem_space(ins), result)
+    (memspace, result)
 }
 
 fn memory_size_to_size(memory_size: iced_x86::MemorySize) -> Option<Size> {
