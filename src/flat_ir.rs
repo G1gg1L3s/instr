@@ -586,7 +586,6 @@ impl Operand {
             Operand::SubReg { reg, lo, size } => {
                 let value_size = value.size().unwrap();
                 assert_eq!(value_size, size);
-                println!(">> subreg: {value} {reg} {lo} {size}");
 
                 let base = Value::Reg(reg);
                 let tmp = ctx.new_temp(Size::U32);
