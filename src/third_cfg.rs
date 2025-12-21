@@ -39,5 +39,16 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) {
             }
             flat_ir::Terminator::Ret { .. } => {}
         }
+
+        for ins in &block.instr {
+            match &ins.ins {
+                flat_ir::Instr::Call {
+                    target: Value::Imm(Imm::U32(addr)),
+                } => {
+                    to_visit.push(Addr(*addr));
+                }
+                _ => {}
+            }
+        }
     }
 }
