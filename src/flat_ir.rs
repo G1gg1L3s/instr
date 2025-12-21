@@ -887,6 +887,30 @@ fn lower_cmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     ctx.emit(Instr::SetSignFlag { src: tmp });
 }
 
+fn lower_test(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+    let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
+
+    let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
+    ctx.emit(Instr::BinOp {
+        op: BinOp::BitAnd,
+        dst: tmp,
+        lhs,
+        rhs,
+    });
+
+    ctx.emit(Instr::Assign {
+        dst: Value::Flag(Flag::Cf),
+        src: Value::Imm(Imm::U8(0)),
+    });
+    ctx.emit(Instr::Assign {
+        dst: Value::Flag(Flag::Of),
+        src: Value::Imm(Imm::U8(0)),
+    });
+    ctx.emit(Instr::SetZeroFlag { src: tmp });
+    ctx.emit(Instr::SetSignFlag { src: tmp });
+}
+
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
@@ -1105,6 +1129,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Call => lower_call(ctx, ins),
         Mnemonic::Mov | Mnemonic::Movzx => lower_mov(ctx, ins),
         Mnemonic::Cmp => lower_cmp(ctx, ins),
+        Mnemonic::Test => lower_test(ctx, ins),
         Mnemonic::Je // zf = 1
         | Mnemonic::Jne // zf = 0
         | Mnemonic::Ja // jump if above (unsigned) (cf = 0 and zf = 0)
