@@ -246,6 +246,19 @@ pub enum Instr {
         dst: Value,
         src: Value,
     },
+
+    SliceBytes {
+        dst: Value,
+        src: Value,
+        start: u8,
+    },
+
+    SetBytes {
+        dst: Value,
+        base: Value,
+        value: Value,
+        start: u8,
+    },
 }
 
 impl std::fmt::Display for Instr {
@@ -255,7 +268,7 @@ impl std::fmt::Display for Instr {
             Self::Assign { dst, src } => write!(f, "{dst} = {src}"),
             Self::Load { dst, addr, space } => {
                 let size = dst.size().unwrap();
-                write!(f, "{dst} = load {size} {addr}")?;
+                write!(f, "{dst} = load {size} [{addr}]")?;
                 if *space == MemSpace::Fs {
                     write!(f, " [fs]")?;
                 }
@@ -284,6 +297,20 @@ impl std::fmt::Display for Instr {
             Self::ZeroExtend { dst, src } => {
                 let dst_size = dst.size().unwrap();
                 write!(f, "{dst} = zero_extend {dst_size} {src}")
+            }
+            Self::SliceBytes { dst, src, start } => {
+                let end = u32::from(*start) + dst.size().unwrap().to_bytes().unwrap();
+
+                write!(f, "{dst} = slice {src}[{start}..{end}]")
+            }
+            Self::SetBytes {
+                dst,
+                base,
+                value,
+                start,
+            } => {
+                let end = u32::from(*start) + value.size().unwrap().to_bytes().unwrap();
+                write!(f, "{dst} = slice {base}[{start}..{end}] set {value}")
             }
         }
     }
@@ -487,6 +514,11 @@ fn lower_mov(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 #[derive(Debug, Clone, Copy)]
 enum Operand {
     Reg(Reg),
+    SubReg {
+        reg: Reg,
+        lo: u8,
+        size: Size,
+    },
     Imm(Imm),
     Memory {
         addr: Value,
@@ -509,6 +541,15 @@ impl Operand {
                     space,
                 });
                 tmp
+            }
+            Operand::SubReg { reg, lo, size } => {
+                let res = ctx.new_temp(size);
+                ctx.emit(Instr::SliceBytes {
+                    dst: res,
+                    src: Value::Reg(reg),
+                    start: lo,
+                });
+                res
             }
         }
     }
@@ -533,14 +574,109 @@ impl Operand {
                     space,
                 });
             }
+            Operand::SubReg { reg, lo, size } => {
+                let value_size = value.size().unwrap();
+                assert_eq!(value_size, size);
+                println!(">> subreg: {value} {reg} {lo} {size}");
+
+                let base = Value::Reg(reg);
+                let tmp = ctx.new_temp(Size::U32);
+                ctx.emit(Instr::SetBytes {
+                    dst: tmp,
+                    base,
+                    value,
+                    start: lo,
+                });
+                ctx.emit(Instr::Assign {
+                    dst: base,
+                    src: tmp,
+                });
+            }
         }
     }
+}
+
+fn lower_subregister(reg: iced_x86::Register) -> Option<Operand> {
+    use iced_x86::Register;
+
+    Some(match reg {
+        Register::AL => Operand::SubReg {
+            reg: Reg::Eax,
+            lo: 0,
+            size: Size::U8,
+        },
+        Register::AH => Operand::SubReg {
+            reg: Reg::Eax,
+            lo: 8,
+            size: Size::U8,
+        },
+        Register::AX => Operand::SubReg {
+            reg: Reg::Eax,
+            lo: 8,
+            size: Size::U16,
+        },
+
+        Register::BL => Operand::SubReg {
+            reg: Reg::Ebx,
+            lo: 0,
+            size: Size::U8,
+        },
+        Register::BH => Operand::SubReg {
+            reg: Reg::Ebx,
+            lo: 8,
+            size: Size::U8,
+        },
+        Register::BX => Operand::SubReg {
+            reg: Reg::Ebx,
+            lo: 8,
+            size: Size::U16,
+        },
+
+        Register::CL => Operand::SubReg {
+            reg: Reg::Ecx,
+            lo: 0,
+            size: Size::U8,
+        },
+        Register::CH => Operand::SubReg {
+            reg: Reg::Ecx,
+            lo: 8,
+            size: Size::U8,
+        },
+        Register::CX => Operand::SubReg {
+            reg: Reg::Ecx,
+            lo: 8,
+            size: Size::U16,
+        },
+
+        Register::DL => Operand::SubReg {
+            reg: Reg::Edx,
+            lo: 0,
+            size: Size::U8,
+        },
+        Register::DH => Operand::SubReg {
+            reg: Reg::Edx,
+            lo: 8,
+            size: Size::U8,
+        },
+        Register::DX => Operand::SubReg {
+            reg: Reg::Edx,
+            lo: 8,
+            size: Size::U16,
+        },
+
+        _ => return None,
+    })
 }
 
 fn lower_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, operand: u32) -> Operand {
     match ins.op_kind(operand) {
         OpKind::Register => {
-            Operand::Reg(map_reg_unwrap(ins.op_register(operand), Addr(ins.ip32())))
+            let operand = ins.op_register(operand);
+            if let Some(op) = lower_subregister(operand) {
+                return op;
+            };
+
+            Operand::Reg(map_reg_unwrap(operand, Addr(ins.ip32())))
         }
         OpKind::Immediate8 => Operand::Imm(Imm::U8(ins.immediate8())),
         OpKind::Immediate16 => Operand::Imm(Imm::U16(ins.immediate16())),
@@ -600,6 +736,7 @@ fn lower_pop(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 
     let size = match &dst {
         Operand::Reg(r) => r.size().unwrap(),
+        Operand::SubReg { size, .. } => *size,
         Operand::Memory { size, .. } => *size,
         Operand::Imm(_) => unreachable!(),
     };
