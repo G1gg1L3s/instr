@@ -37,6 +37,7 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) {
                     to_visit.push(Addr(u32));
                 }
             }
+            flat_ir::Terminator::Ret { .. } => {}
         }
     }
 }

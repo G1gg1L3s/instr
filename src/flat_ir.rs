@@ -921,6 +921,9 @@ pub enum Terminator {
     Jump {
         target: Value,
     },
+    Ret {
+        stack_adjust: u16,
+    },
 }
 
 impl std::fmt::Display for Terminator {
@@ -932,6 +935,7 @@ impl std::fmt::Display for Terminator {
                 else_bb,
             } => write!(f, "if {cond} then {then_bb} else {else_bb}"),
             Self::Jump { target } => write!(f, "jump {target}"),
+            Self::Ret { stack_adjust } => write!(f, "ret {stack_adjust}"),
         }
     }
 }
@@ -1156,12 +1160,26 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Lea => lower_lea(ctx, ins),
         Mnemonic::Inc => lower_inc(ctx, ins),
 
+        Mnemonic::Ret => return Some(lower_ret(ctx, ins)),
+
         _ => {
             eprintln!("{}", ctx);
             panic!("unknown instruction: {} at {}", ins, Addr(ins.ip32()))
         }
     }
     None
+}
+
+fn lower_ret(_ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
+    let adjust = if ins.op_count() > 0 {
+        ins.immediate16()
+    } else {
+        0
+    };
+
+    Terminator::Ret {
+        stack_adjust: adjust,
+    }
 }
 
 pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
