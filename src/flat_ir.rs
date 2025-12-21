@@ -305,7 +305,7 @@ impl std::fmt::Display for Instr {
             Self::Not { dst, src } => write!(f, "{dst} = not {src}"),
             Self::ZeroExtend { dst, src } => {
                 let dst_size = dst.size().unwrap();
-                write!(f, "{dst} = zero_extend {dst_size} {src}")
+                write!(f, "{dst} = {dst_size}({src})")
             }
             Self::SliceBytes { dst, src, start } => {
                 let end = u32::from(*start) + dst.size().unwrap().to_bytes().unwrap();
@@ -910,6 +910,20 @@ fn lower_test(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     ctx.emit(Instr::SetSignFlag { src: tmp });
 }
 
+fn lower_sete_setne(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let lhs = lower_operand(ctx, ins, 0);
+
+    let src = if ins.mnemonic() == Mnemonic::Sete {
+        Value::Flag(Flag::Zf)
+    } else {
+        emit_not(ctx, Value::Flag(Flag::Zf))
+    };
+
+    let tmp = ctx.new_temp(Size::U8);
+    ctx.emit(Instr::ZeroExtend { dst: tmp, src });
+    lhs.lower_store(ctx, tmp);
+}
+
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
@@ -1160,6 +1174,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Inc => lower_inc(ctx, ins),
 
         Mnemonic::Ret => return Some(lower_ret(ctx, ins)),
+
+        Mnemonic::Sete | Mnemonic::Setne => lower_sete_setne(ctx, ins),
 
         _ => {
             eprintln!("{}", ctx);
