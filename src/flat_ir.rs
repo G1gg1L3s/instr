@@ -1073,6 +1073,106 @@ fn lower_inc(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     operand.lower_store(ctx, new);
 }
 
+fn _lower_enter(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let frame_size = ins.immediate16();
+    let nesting = ins.immediate8();
+
+    if nesting != 0 {
+        panic!(
+            "ENTER with nesting != 0 not supported at {}",
+            Addr(ins.ip32())
+        );
+    }
+
+    // push ebp
+    let ebp = Value::Reg(Reg::Ebp);
+    let esp = Value::Reg(Reg::Esp);
+
+    let new_esp = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Sub,
+        dst: new_esp,
+        lhs: esp.clone(),
+        rhs: Value::Imm(Imm::U32(4)),
+    });
+
+    ctx.emit(Instr::Store {
+        addr: new_esp,
+        src: ebp.clone(),
+        space: MemSpace::Default,
+    });
+
+    ctx.emit(Instr::Assign {
+        dst: esp.clone(),
+        src: new_esp,
+    });
+
+    // mov ebp, esp
+    ctx.emit(Instr::Assign {
+        dst: ebp.clone(),
+        src: esp.clone(),
+    });
+
+    // sub esp, imm16
+    if frame_size != 0 {
+        let esp_after_alloc = ctx.new_temp(Size::U32);
+        ctx.emit(Instr::BinOp {
+            op: BinOp::Sub,
+            dst: esp_after_alloc,
+            lhs: esp.clone(),
+            rhs: Value::Imm(Imm::U32(frame_size.into())),
+        });
+
+        ctx.emit(Instr::Assign {
+            dst: esp,
+            src: esp_after_alloc,
+        });
+    }
+}
+
+fn lower_leave(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction) {
+    let esp = Value::Reg(Reg::Esp);
+    let ebp = Value::Reg(Reg::Ebp);
+
+    // mov esp, ebp
+    ctx.emit(Instr::Assign {
+        dst: esp.clone(),
+        src: ebp.clone(),
+    });
+
+    // pop ebp
+    let old_esp = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::Assign {
+        dst: old_esp,
+        src: esp.clone(),
+    });
+
+    let new_ebp = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::Load {
+        dst: new_ebp,
+        addr: old_esp,
+        space: MemSpace::Default,
+    });
+
+    ctx.emit(Instr::Assign {
+        dst: ebp,
+        src: new_ebp,
+    });
+
+    let esp_after_pop = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Add,
+        dst: esp_after_pop,
+        lhs: esp,
+        rhs: Value::Imm(Imm::U32(4)),
+    });
+
+    ctx.emit(Instr::Assign {
+        dst: Value::Reg(Reg::Esp),
+        src: esp_after_pop,
+    });
+}
+
 fn emit_not(ctx: &mut LowerCtx, src: Value) -> Value {
     let res = ctx.new_temp(Size::U1);
     ctx.emit(Instr::Not { dst: res, src });
@@ -1125,6 +1225,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
     match ins.mnemonic() {
         Mnemonic::Push => lower_push(ctx, ins),
         Mnemonic::Pop => lower_pop(ctx, ins),
+        Mnemonic::Leave => lower_leave(ctx, ins),
+
         Mnemonic::Call => lower_call(ctx, ins),
         Mnemonic::Mov | Mnemonic::Movzx => lower_mov(ctx, ins),
         Mnemonic::Cmp => lower_cmp(ctx, ins),
