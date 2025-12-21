@@ -1056,15 +1056,21 @@ fn lower_lea(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
-fn lower_inc(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+fn lower_inc_dec(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let operand = lower_operand(ctx, ins, 0);
     let lhs = operand.lower_load(ctx);
     let size = lhs.size().unwrap();
     let imm = Imm::new(1, size).unwrap();
 
-    let new = emit_bin(ctx, BinOp::Add, lhs, Value::Imm(imm));
+    let op = if ins.mnemonic() == Mnemonic::Inc {
+        BinOp::Add
+    } else {
+        BinOp::Sub
+    };
+
+    let new = emit_bin(ctx, op, lhs, Value::Imm(imm));
     ctx.emit(Instr::SetOverflowFlag {
-        op: BinOp::Add,
+        op,
         lhs,
         rhs: Value::Imm(imm),
     });
@@ -1339,7 +1345,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Neg => lower_neg(ctx, ins),
 
         Mnemonic::Lea => lower_lea(ctx, ins),
-        Mnemonic::Inc => lower_inc(ctx, ins),
+        Mnemonic::Inc | Mnemonic::Dec => lower_inc_dec(ctx, ins),
 
         Mnemonic::Ret => return Some(lower_ret(ctx, ins)),
 
