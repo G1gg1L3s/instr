@@ -184,6 +184,7 @@ pub enum BinOp {
     Mul,
     BitAnd,
     BitOr,
+    Shl,
 }
 
 impl std::fmt::Display for BinOp {
@@ -195,6 +196,7 @@ impl std::fmt::Display for BinOp {
             BinOp::Xor => write!(f, "xor"),
             BinOp::BitAnd => write!(f, "&"),
             BinOp::BitOr => write!(f, "|"),
+            BinOp::Shl => write!(f, "<<"),
         }
     }
 }
@@ -842,6 +844,45 @@ fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
     });
 }
 
+fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
+    let dst_operand = lower_operand(ctx, ins, 0);
+    let lhs = dst_operand.lower_load(ctx);
+    let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
+
+    // Mask shift count: x86 masks by 0x1F for 32-bit operands
+    let rhs_size = rhs.size().unwrap();
+    let masked_count = emit_bin(
+        ctx,
+        BinOp::BitAnd,
+        rhs,
+        Value::Imm(Imm::new(0x1F, rhs_size).unwrap()),
+    );
+
+    let result = emit_bin(ctx, op, lhs, masked_count);
+
+    // Carry flag: last bit shifted out
+    ctx.emit(Instr::SetCarryFlag {
+        op,
+        lhs: lhs.clone(),
+        rhs: masked_count.clone(),
+    });
+
+    ctx.emit(Instr::SetOverflowFlag {
+        op,
+        lhs: lhs.clone(),
+        rhs: rhs.clone(),
+    });
+
+    ctx.emit(Instr::SetZeroFlag {
+        src: result.clone(),
+    });
+    ctx.emit(Instr::SetSignFlag {
+        src: result.clone(),
+    });
+
+    dst_operand.lower_store(ctx, result);
+}
+
 fn lower_cmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
     let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
@@ -1341,6 +1382,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Or => lower_binary_bit_op(ctx, ins, BinOp::BitOr),
         Mnemonic::And => lower_binary_bit_op(ctx, ins, BinOp::BitAnd),
         Mnemonic::Xor => lower_binary_bit_op(ctx, ins, BinOp::Xor),
+
+        Mnemonic::Shl => lower_shift(ctx, ins, BinOp::Shl),
 
         Mnemonic::Neg => lower_neg(ctx, ins),
 
