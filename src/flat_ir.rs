@@ -1198,6 +1198,60 @@ fn lower_leave(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction) {
     });
 }
 
+fn lower_flag_as_int(ctx: &mut LowerCtx, flag: Flag, size: Size) -> Value {
+    let tmp = ctx.new_temp(size);
+    ctx.emit(Instr::ZeroExtend {
+        dst: tmp,
+        src: Value::Flag(flag),
+    });
+    tmp
+}
+
+fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    lower_bin_operation(ctx, ins, |ctx, _ins, lhs, rhs| {
+        let size = bin_size(&lhs, &rhs);
+
+        // CF as integer (0 or 1)
+        let cf_int = lower_flag_as_int(ctx, Flag::Cf, size);
+
+        // rhs + CF
+        let rhs_plus_cf = ctx.new_temp(size);
+        ctx.emit(Instr::BinOp {
+            op: BinOp::Add,
+            dst: rhs_plus_cf,
+            lhs: rhs,
+            rhs: cf_int,
+        });
+
+        // lhs - (rhs + CF)
+        let res = ctx.new_temp(size);
+        ctx.emit(Instr::BinOp {
+            op: BinOp::Sub,
+            dst: res,
+            lhs,
+            rhs: rhs_plus_cf,
+        });
+
+        // flags — computed from the *combined* subtraction
+        ctx.emit(Instr::SetCarryFlag {
+            op: BinOp::Sub,
+            lhs,
+            rhs: rhs_plus_cf,
+        });
+
+        ctx.emit(Instr::SetOverflowFlag {
+            op: BinOp::Sub,
+            lhs,
+            rhs: rhs_plus_cf,
+        });
+
+        ctx.emit(Instr::SetZeroFlag { src: res });
+        ctx.emit(Instr::SetSignFlag { src: res });
+
+        res
+    });
+}
+
 fn emit_not(ctx: &mut LowerCtx, src: Value) -> Value {
     let res = ctx.new_temp(Size::U1);
     ctx.emit(Instr::Not { dst: res, src });
@@ -1276,6 +1330,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
 
         Mnemonic::Add => lower_bin_set_flags(ctx, ins, BinOp::Add),
         Mnemonic::Sub => lower_bin_set_flags(ctx, ins, BinOp::Sub),
+        Mnemonic::Sbb => lower_sbb(ctx, ins),
 
         Mnemonic::Or => lower_binary_bit_op(ctx, ins, BinOp::BitOr),
         Mnemonic::And => lower_binary_bit_op(ctx, ins, BinOp::BitAnd),
