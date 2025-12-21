@@ -1073,6 +1073,31 @@ fn lower_inc(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     operand.lower_store(ctx, new);
 }
 
+fn lower_neg(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let operand = lower_operand(ctx, ins, 0);
+    let value = operand.lower_load(ctx);
+    let size = value.size().unwrap();
+
+    ctx.emit(Instr::SetZeroFlag { src: value });
+    let neg_zf = emit_not(ctx, Value::Flag(Flag::Zf));
+    ctx.emit(Instr::Assign {
+        dst: Value::Flag(Flag::Cf),
+        src: neg_zf,
+    });
+
+    let lhs = Value::Imm(Imm::new(0, size).unwrap());
+    let new = emit_bin(ctx, BinOp::Sub, lhs, value);
+
+    ctx.emit(Instr::SetOverflowFlag {
+        op: BinOp::Sub,
+        lhs,
+        rhs: value,
+    });
+    ctx.emit(Instr::SetZeroFlag { src: new });
+    ctx.emit(Instr::SetSignFlag { src: new });
+    operand.lower_store(ctx, new);
+}
+
 fn _lower_enter(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let frame_size = ins.immediate16();
     let nesting = ins.immediate8();
@@ -1255,6 +1280,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Or => lower_binary_bit_op(ctx, ins, BinOp::BitOr),
         Mnemonic::And => lower_binary_bit_op(ctx, ins, BinOp::BitAnd),
         Mnemonic::Xor => lower_binary_bit_op(ctx, ins, BinOp::Xor),
+
+        Mnemonic::Neg => lower_neg(ctx, ins),
 
         Mnemonic::Lea => lower_lea(ctx, ins),
         Mnemonic::Inc => lower_inc(ctx, ins),
