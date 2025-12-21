@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     SectionData,
     addr::Addr,
@@ -7,7 +9,14 @@ use crate::{
 pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) {
     let mut to_visit = vec![start];
 
+    let mut visited = HashSet::new();
+
     while let Some(addr) = to_visit.pop() {
+        let new = visited.insert(addr);
+        if !new {
+            continue;
+        }
+
         let code = text.slice_to_end(addr);
         let block = flat_ir::lower_block(code, addr);
         eprintln!("{block}");
