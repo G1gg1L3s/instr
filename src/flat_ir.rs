@@ -69,6 +69,15 @@ pub enum Imm {
     U32(u32),
 }
 impl Imm {
+    fn new(val: u8, size: Size) -> Option<Self> {
+        match size {
+            Size::U1 => None,
+            Size::U8 => Some(Self::U8(val)),
+            Size::U16 => Some(Self::U16(val.into())),
+            Size::U32 => Some(Self::U32(val.into())),
+        }
+    }
+
     fn size(&self) -> Option<Size> {
         Some(match self {
             Imm::U8(_) => Size::U8,
@@ -1024,6 +1033,23 @@ fn lower_lea(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
+fn lower_inc(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let operand = lower_operand(ctx, ins, 0);
+    let lhs = operand.lower_load(ctx);
+    let size = lhs.size().unwrap();
+    let imm = Imm::new(1, size).unwrap();
+
+    let new = emit_bin(ctx, BinOp::Add, lhs, Value::Imm(imm));
+    ctx.emit(Instr::SetOverflowFlag {
+        op: BinOp::Add,
+        lhs,
+        rhs: Value::Imm(imm),
+    });
+    ctx.emit(Instr::SetZeroFlag { src: new });
+    ctx.emit(Instr::SetSignFlag { src: new });
+    operand.lower_store(ctx, new);
+}
+
 fn emit_not(ctx: &mut LowerCtx, src: Value) -> Value {
     let res = ctx.new_temp(Size::U1);
     ctx.emit(Instr::Not { dst: res, src });
@@ -1103,6 +1129,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Xor => lower_xor(ctx, ins),
 
         Mnemonic::Lea => lower_lea(ctx, ins),
+        Mnemonic::Inc => lower_inc(ctx, ins),
 
         _ => {
             eprintln!("{}", ctx);
