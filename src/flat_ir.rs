@@ -70,6 +70,46 @@ impl FlagxGroup {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Condition {
+    Equal,
+    NotEqual,
+    SignLess,
+    UnsignedLess,
+    SignedLessEqual,
+    UnsignedLessEqual,
+    SignedGreaterEqual,
+    UnsignedGreaterEqual,
+    SignedGreater,
+    UnsignedGreater,
+    Negative,
+    Positive,
+    Overflow,
+    NoOverflow,
+}
+
+impl std::fmt::Display for Condition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let literal = match self {
+            Condition::Equal => "==",
+            Condition::NotEqual => "!=",
+            Condition::SignLess => "s<",
+            Condition::UnsignedLess => "u<",
+            Condition::SignedLessEqual => "s<=",
+            Condition::UnsignedLessEqual => "u<=",
+            Condition::SignedGreaterEqual => "s>=",
+            Condition::UnsignedGreaterEqual => "u>=",
+            Condition::SignedGreater => "s>",
+            Condition::UnsignedGreater => "u>",
+            Condition::Negative => "-",
+            Condition::Positive => "+",
+            Condition::Overflow => "overflow",
+            Condition::NoOverflow => "!overflow",
+        };
+        write!(f, "{literal}")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Flag {
     /// Carry flag
     Cf,
@@ -933,7 +973,7 @@ fn lower_sete_setne(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
-        cond: Value,
+        cond: Condition,
         then_bb: Value,
         else_bb: Value,
     },
@@ -969,92 +1009,27 @@ fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     let target = lower_operand(ctx, ins, 0).lower_load(ctx);
 
     let cond = match ins.mnemonic() {
-        Mnemonic::Je => Value::Flag(Flag::Zf),
-        Mnemonic::Jne => {
-            // zf = 0
-            emit_not(ctx, Value::Flag(Flag::Zf))
-        }
-        Mnemonic::Ja => {
-            // jump if above (unsigned) (cf = 0 and zf = 0)
-            let cf_is_zero = emit_not(ctx, Value::Flag(Flag::Cf));
-            let zf_is_zero = emit_not(ctx, Value::Flag(Flag::Zf));
-            emit_bin(ctx, BinOp::BitAnd, cf_is_zero, zf_is_zero)
-        }
-        Mnemonic::Jae => {
-            // jump if aboce or eq (unsigned) (cf = 0)
-            emit_not(ctx, Value::Flag(Flag::Cf))
-        }
-        Mnemonic::Jb => {
-            // jump if below (unsigned) cf = 1
-            Value::Flag(Flag::Cf)
-        }
-        Mnemonic::Jbe => {
-            // jump if below or eq (unsigned) cf = 1 or zf = 1
-            emit_bin(
-                ctx,
-                BinOp::BitOr,
-                Value::Flag(Flag::Cf),
-                Value::Flag(Flag::Zf),
-            )
-        }
-        Mnemonic::Jg => {
-            // jump if greater (signed) (zf = 0 and sf = of)
-            let sf_ne_of = emit_bin(
-                ctx,
-                BinOp::Xor,
-                Value::Flag(Flag::Sf),
-                Value::Flag(Flag::Of),
-            );
-            let sf_eq_of = emit_not(ctx, sf_ne_of);
-            let not_zf = emit_not(ctx, Value::Flag(Flag::Zf));
+        Mnemonic::Je => Condition::Equal,     // ZF = 1
+        Mnemonic::Jne => Condition::NotEqual, // ZF = 0
 
-            emit_bin(ctx, BinOp::BitAnd, not_zf, sf_eq_of)
-        }
-        Mnemonic::Jge => {
-            // jump if greater or equal (sf = of)
-            let sf_ne_of = emit_bin(
-                ctx,
-                BinOp::Xor,
-                Value::Flag(Flag::Sf),
-                Value::Flag(Flag::Of),
-            );
-            emit_not(ctx, sf_ne_of)
-        }
-        Mnemonic::Jl => {
-            // jump if less (signed) (sf <> of)
-            emit_bin(
-                ctx,
-                BinOp::Xor,
-                Value::Flag(Flag::Sf),
-                Value::Flag(Flag::Of),
-            )
-        }
-        Mnemonic::Jle => {
-            // jump if less or equal (signed) (zf = 1 or sf <> of)
-            let sf_ne_of = emit_bin(
-                ctx,
-                BinOp::Xor,
-                Value::Flag(Flag::Sf),
-                Value::Flag(Flag::Of),
-            );
-            emit_bin(ctx, BinOp::BitOr, Value::Flag(Flag::Zf), sf_ne_of)
-        }
-        Mnemonic::Jo => {
-            // of = 1
-            Value::Flag(Flag::Of)
-        }
-        Mnemonic::Jno => {
-            // of = 0
-            emit_not(ctx, Value::Flag(Flag::Of))
-        }
-        Mnemonic::Js => {
-            // sf = 1
-            Value::Flag(Flag::Sf)
-        }
-        Mnemonic::Jns => {
-            //  sf = 0
-            emit_not(ctx, Value::Flag(Flag::Sf))
-        }
+        Mnemonic::Ja => Condition::UnsignedGreater, // CF = 0 && ZF = 0
+        Mnemonic::Jae => Condition::UnsignedGreaterEqual, // CF = 0
+
+        Mnemonic::Jb => Condition::UnsignedLess, // CF = 1
+        Mnemonic::Jbe => Condition::UnsignedLessEqual, // CF = 1 || ZF = 1
+
+        Mnemonic::Jg => Condition::SignedGreater, // ZF = 0 && SF == OF
+        Mnemonic::Jge => Condition::SignedGreaterEqual, // SF == OF
+
+        Mnemonic::Jl => Condition::SignLess,         // SF != OF
+        Mnemonic::Jle => Condition::SignedLessEqual, // ZF = 1 || SF != OF
+
+        Mnemonic::Jo => Condition::Overflow,    // OF = 1
+        Mnemonic::Jno => Condition::NoOverflow, // OF = 0
+
+        Mnemonic::Js => Condition::Negative,  // SF = 1
+        Mnemonic::Jns => Condition::Positive, // SF = 0
+
         _ => panic!("unknown ins: {ins}"),
     };
 
