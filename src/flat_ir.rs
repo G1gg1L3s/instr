@@ -311,7 +311,10 @@ pub enum BinOp {
     Mul,
     BitAnd,
     BitOr,
-    Shl,
+
+    ShiftLeft,
+    ShifRight,
+    ShifArithRight,
 }
 
 impl std::fmt::Display for BinOp {
@@ -323,7 +326,9 @@ impl std::fmt::Display for BinOp {
             BinOp::Xor => write!(f, "xor"),
             BinOp::BitAnd => write!(f, "&"),
             BinOp::BitOr => write!(f, "|"),
-            BinOp::Shl => write!(f, "<<"),
+            BinOp::ShiftLeft => write!(f, "<<"),
+            BinOp::ShifRight => write!(f, ">>"),
+            BinOp::ShifArithRight => write!(f, "a>>"),
         }
     }
 }
@@ -1397,7 +1402,10 @@ impl std::fmt::Display for Block {
             }
         }
 
-        let last = self.instr.last().unwrap();
+        let Some(last) = self.instr.last() else {
+            writeln!(f, "{}: {}", self.terminator.addr, self.terminator.inner)?;
+            return Ok(());
+        };
         if last.addr == self.terminator.addr {
             writeln!(f, "          {}", self.terminator.inner)?;
         } else {
@@ -1445,7 +1453,9 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::And => lower_binary_bit_op(ctx, ins, BinOp::BitAnd),
         Mnemonic::Xor => lower_binary_bit_op(ctx, ins, BinOp::Xor),
 
-        Mnemonic::Shl => lower_shift(ctx, ins, BinOp::Shl),
+        Mnemonic::Shl => lower_shift(ctx, ins, BinOp::ShiftLeft),
+        Mnemonic::Shr => lower_shift(ctx, ins, BinOp::ShifRight),
+        Mnemonic::Sar => lower_shift(ctx, ins, BinOp::ShifArithRight),
 
         Mnemonic::Neg => lower_neg(ctx, ins),
 
