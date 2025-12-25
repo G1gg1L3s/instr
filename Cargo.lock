@@ -210,6 +210,7 @@ name = "instr"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bitflags",
  "encoding_rs",
  "hex",
  "iced-x86",

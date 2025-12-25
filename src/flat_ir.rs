@@ -20,6 +20,55 @@ impl Reg {
     }
 }
 
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Flagx: u8 {
+        /// Carry flag
+        const CARRY =    0b1;
+        /// Zero flag
+        const ZERO =     0b10;
+        /// Sign flag
+        const SIGN =     0b100;
+        /// Overflow flag
+        const OVERFLOW = 0b1000;
+        /// Parity flag
+        const PARITY =   0b10000;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FlagxGroup(Flagx);
+
+impl std::fmt::Display for FlagxGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            x if x == Self::ALL => write!(f, "f:*"),
+            x if x == Self::NOCARRY => write!(f, "f:!c"),
+            _ => {
+                write!(f, "f:")?;
+                for flag in self.0 {
+                    write!(f, "{:?}", flag)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl FlagxGroup {
+    pub const NONE: Self = Self(Flagx::empty());
+
+    pub const ALL: Self = Self(
+        Flagx::CARRY
+            .union(Flagx::ZERO)
+            .union(Flagx::SIGN)
+            .union(Flagx::OVERFLOW)
+            .union(Flagx::PARITY),
+    );
+
+    pub const NOCARRY: Self = Self(Self::ALL.0.difference(Flagx::CARRY));
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Flag {
     /// Carry flag
@@ -208,6 +257,7 @@ pub enum Instr {
         dst: Value,
         lhs: Value,
         rhs: Value,
+        flags: FlagxGroup,
     },
     Assign {
         dst: Value,
@@ -225,26 +275,6 @@ pub enum Instr {
     },
     Call {
         target: Value,
-    },
-
-    SetZeroFlag {
-        src: Value,
-    },
-
-    SetOverflowFlag {
-        op: BinOp,
-        lhs: Value,
-        rhs: Value,
-    },
-
-    SetCarryFlag {
-        op: BinOp,
-        lhs: Value,
-        rhs: Value,
-    },
-
-    SetSignFlag {
-        src: Value,
     },
 
     // TODO: may be replaced with just `0 - src`
@@ -275,7 +305,19 @@ pub enum Instr {
 impl std::fmt::Display for Instr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::BinOp { op, dst, lhs, rhs } => write!(f, "{dst} = {lhs} {op} {rhs}"),
+            Self::BinOp {
+                op,
+                dst,
+                lhs,
+                rhs,
+                flags,
+            } => {
+                if flags.0.is_empty() {
+                    write!(f, "{dst} = {lhs} {op} {rhs}")
+                } else {
+                    write!(f, "{dst}, {flags} = {lhs} {op} {rhs}")
+                }
+            }
             Self::Assign { dst, src } => write!(f, "{dst} = {src}"),
             Self::Load { dst, addr, space } => {
                 let size = dst.size().unwrap();
@@ -296,14 +338,6 @@ impl std::fmt::Display for Instr {
             Self::Call { target } => {
                 write!(f, "call {target}")
             }
-            Self::SetZeroFlag { src } => write!(f, "zf = is_zero {src}"),
-            Self::SetOverflowFlag { op, lhs, rhs } => {
-                write!(f, "of = is_overflow {lhs} {op} {rhs}")
-            }
-            Self::SetCarryFlag { op, lhs, rhs } => {
-                write!(f, "cf = is_carry {lhs} {op} {rhs}")
-            }
-            Self::SetSignFlag { src } => write!(f, "sf = sign {src}"),
             Self::Not { dst, src } => write!(f, "{dst} = not {src}"),
             Self::ZeroExtend { dst, src } => {
                 let dst_size = dst.size().unwrap();
@@ -433,6 +467,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
                 dst: scaled.clone(),
                 lhs: idx,
                 rhs: Value::Imm(Imm::U32(scale)),
+                flags: FlagxGroup::NONE,
             });
             scaled
         })
@@ -447,6 +482,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
                 dst: scaled_and_base,
                 lhs: scaled,
                 rhs: base,
+                flags: FlagxGroup::NONE,
             });
             scaled_and_base
         } else {
@@ -467,6 +503,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
                 dst: res,
                 lhs: scaled_and_base,
                 rhs: disp,
+                flags: FlagxGroup::NONE,
             });
             res
         } else {
@@ -732,6 +769,7 @@ fn lower_push(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         dst: new_esp,
         lhs: esp.clone(),
         rhs: Value::Imm(Imm::U32(value.size().unwrap().to_bytes().unwrap())),
+        flags: FlagxGroup::NONE,
     });
 
     ctx.emit(Instr::Store {
@@ -780,6 +818,7 @@ fn lower_pop(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         dst: new_esp,
         lhs: esp.clone(),
         rhs: Value::Imm(Imm::U32(byte_count)),
+        flags: FlagxGroup::NONE,
     });
 
     ctx.emit(Instr::Assign {
@@ -811,17 +850,8 @@ fn lower_binary_bit_op(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
             dst: tmp,
             lhs,
             rhs,
+            flags: FlagxGroup::ALL,
         });
-        ctx.emit(Instr::Assign {
-            dst: Value::Flag(Flag::Of),
-            src: Value::Imm(Imm::U8(0)),
-        });
-        ctx.emit(Instr::Assign {
-            dst: Value::Flag(Flag::Cf),
-            src: Value::Imm(Imm::U8(0)),
-        });
-        ctx.emit(Instr::SetZeroFlag { src: tmp });
-        ctx.emit(Instr::SetSignFlag { src: tmp });
         tmp
     });
 }
@@ -834,12 +864,8 @@ fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
             dst: res,
             lhs,
             rhs,
+            flags: FlagxGroup::ALL,
         });
-
-        ctx.emit(Instr::SetCarryFlag { op, lhs, rhs });
-        ctx.emit(Instr::SetOverflowFlag { op, lhs, rhs });
-        ctx.emit(Instr::SetZeroFlag { src: res });
-        ctx.emit(Instr::SetSignFlag { src: res });
         res
     });
 }
@@ -858,28 +884,7 @@ fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
         Value::Imm(Imm::new(0x1F, rhs_size).unwrap()),
     );
 
-    let result = emit_bin(ctx, op, lhs, masked_count);
-
-    // Carry flag: last bit shifted out
-    ctx.emit(Instr::SetCarryFlag {
-        op,
-        lhs: lhs.clone(),
-        rhs: masked_count.clone(),
-    });
-
-    ctx.emit(Instr::SetOverflowFlag {
-        op,
-        lhs: lhs.clone(),
-        rhs: rhs.clone(),
-    });
-
-    ctx.emit(Instr::SetZeroFlag {
-        src: result.clone(),
-    });
-    ctx.emit(Instr::SetSignFlag {
-        src: result.clone(),
-    });
-
+    let result = emit_bin_with_flags(ctx, op, lhs, masked_count, FlagxGroup::ALL);
     dst_operand.lower_store(ctx, result);
 }
 
@@ -893,20 +898,8 @@ fn lower_cmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         dst: tmp,
         lhs,
         rhs,
+        flags: FlagxGroup::ALL,
     });
-
-    ctx.emit(Instr::SetOverflowFlag {
-        op: BinOp::Sub,
-        lhs,
-        rhs,
-    });
-    ctx.emit(Instr::SetCarryFlag {
-        op: BinOp::Sub,
-        lhs,
-        rhs,
-    });
-    ctx.emit(Instr::SetZeroFlag { src: tmp });
-    ctx.emit(Instr::SetSignFlag { src: tmp });
 }
 
 fn lower_test(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
@@ -919,18 +912,8 @@ fn lower_test(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         dst: tmp,
         lhs,
         rhs,
+        flags: FlagxGroup::ALL,
     });
-
-    ctx.emit(Instr::Assign {
-        dst: Value::Flag(Flag::Cf),
-        src: Value::Imm(Imm::U8(0)),
-    });
-    ctx.emit(Instr::Assign {
-        dst: Value::Flag(Flag::Of),
-        src: Value::Imm(Imm::U8(0)),
-    });
-    ctx.emit(Instr::SetZeroFlag { src: tmp });
-    ctx.emit(Instr::SetSignFlag { src: tmp });
 }
 
 fn lower_sete_setne(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
@@ -1109,14 +1092,7 @@ fn lower_inc_dec(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         BinOp::Sub
     };
 
-    let new = emit_bin(ctx, op, lhs, Value::Imm(imm));
-    ctx.emit(Instr::SetOverflowFlag {
-        op,
-        lhs,
-        rhs: Value::Imm(imm),
-    });
-    ctx.emit(Instr::SetZeroFlag { src: new });
-    ctx.emit(Instr::SetSignFlag { src: new });
+    let new = emit_bin_with_flags(ctx, op, lhs, Value::Imm(imm), FlagxGroup::NOCARRY);
     operand.lower_store(ctx, new);
 }
 
@@ -1125,23 +1101,9 @@ fn lower_neg(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let value = operand.lower_load(ctx);
     let size = value.size().unwrap();
 
-    ctx.emit(Instr::SetZeroFlag { src: value });
-    let neg_zf = emit_not(ctx, Value::Flag(Flag::Zf));
-    ctx.emit(Instr::Assign {
-        dst: Value::Flag(Flag::Cf),
-        src: neg_zf,
-    });
-
     let lhs = Value::Imm(Imm::new(0, size).unwrap());
-    let new = emit_bin(ctx, BinOp::Sub, lhs, value);
+    let new = emit_bin_with_flags(ctx, BinOp::Sub, lhs, value, FlagxGroup::ALL);
 
-    ctx.emit(Instr::SetOverflowFlag {
-        op: BinOp::Sub,
-        lhs,
-        rhs: value,
-    });
-    ctx.emit(Instr::SetZeroFlag { src: new });
-    ctx.emit(Instr::SetSignFlag { src: new });
     operand.lower_store(ctx, new);
 }
 
@@ -1166,6 +1128,7 @@ fn _lower_enter(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         dst: new_esp,
         lhs: esp.clone(),
         rhs: Value::Imm(Imm::U32(4)),
+        flags: FlagxGroup::NONE,
     });
 
     ctx.emit(Instr::Store {
@@ -1193,6 +1156,7 @@ fn _lower_enter(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
             dst: esp_after_alloc,
             lhs: esp.clone(),
             rhs: Value::Imm(Imm::U32(frame_size.into())),
+            flags: FlagxGroup::NONE,
         });
 
         ctx.emit(Instr::Assign {
@@ -1237,6 +1201,7 @@ fn lower_leave(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction) {
         dst: esp_after_pop,
         lhs: esp,
         rhs: Value::Imm(Imm::U32(4)),
+        flags: FlagxGroup::NONE,
     });
 
     ctx.emit(Instr::Assign {
@@ -1268,6 +1233,7 @@ fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
             dst: rhs_plus_cf,
             lhs: rhs,
             rhs: cf_int,
+            flags: FlagxGroup::NONE,
         });
 
         // lhs - (rhs + CF)
@@ -1277,23 +1243,8 @@ fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
             dst: res,
             lhs,
             rhs: rhs_plus_cf,
+            flags: FlagxGroup::ALL,
         });
-
-        // flags — computed from the *combined* subtraction
-        ctx.emit(Instr::SetCarryFlag {
-            op: BinOp::Sub,
-            lhs,
-            rhs: rhs_plus_cf,
-        });
-
-        ctx.emit(Instr::SetOverflowFlag {
-            op: BinOp::Sub,
-            lhs,
-            rhs: rhs_plus_cf,
-        });
-
-        ctx.emit(Instr::SetZeroFlag { src: res });
-        ctx.emit(Instr::SetSignFlag { src: res });
 
         res
     });
@@ -1306,12 +1257,23 @@ fn emit_not(ctx: &mut LowerCtx, src: Value) -> Value {
 }
 
 fn emit_bin(ctx: &mut LowerCtx, op: BinOp, lhs: Value, rhs: Value) -> Value {
+    emit_bin_with_flags(ctx, op, lhs, rhs, FlagxGroup::NONE)
+}
+
+fn emit_bin_with_flags(
+    ctx: &mut LowerCtx,
+    op: BinOp,
+    lhs: Value,
+    rhs: Value,
+    flags: FlagxGroup,
+) -> Value {
     let res = ctx.new_temp(Size::U1);
     ctx.emit(Instr::BinOp {
         op,
         dst: res,
         lhs,
         rhs,
+        flags,
     });
     res
 }
