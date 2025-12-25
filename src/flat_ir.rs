@@ -360,7 +360,6 @@ pub enum Instr {
         target: Value,
     },
 
-    // TODO: may be replaced with just `0 - src`
     Not {
         dst: Value,
         src: Value,
@@ -1203,6 +1202,17 @@ fn lower_neg(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     operand.lower_store(ctx, new);
 }
 
+fn lower_not(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let operand = lower_operand(ctx, ins, 0);
+    let value = operand.lower_load(ctx);
+    let size = value.size().unwrap();
+
+    let res = ctx.new_temp(size);
+    ctx.emit(Instr::Not { dst: res, src: res });
+
+    operand.lower_store(ctx, res);
+}
+
 fn _lower_enter(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let frame_size = ins.immediate16();
     let nesting = ins.immediate8();
@@ -1458,6 +1468,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Sar => lower_shift(ctx, ins, BinOp::ShifArithRight),
 
         Mnemonic::Neg => lower_neg(ctx, ins),
+        Mnemonic::Not => lower_not(ctx, ins),
 
         Mnemonic::Lea => lower_lea(ctx, ins),
         Mnemonic::Inc | Mnemonic::Dec => lower_inc_dec(ctx, ins),
