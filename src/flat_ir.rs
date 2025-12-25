@@ -178,7 +178,7 @@ impl Imm {
             Size::U16 => Some(Self::U16(val.into())),
             Size::U32 => Some(Self::U32(val.into())),
 
-            Size::U1 | Size::I8 | Size::I16 | Size::I32 | Size::F64 => None,
+            Size::U1 | Size::I8 | Size::I16 | Size::I32 | Size::F32 | Size::F64 => None,
         }
     }
 
@@ -212,6 +212,7 @@ pub enum Size {
     I16,
     I32,
 
+    F32,
     F64,
 }
 impl Size {
@@ -227,6 +228,7 @@ impl Size {
             Size::I16 => Some(2),
             Size::I32 => Some(4),
 
+            Size::F32 => Some(4),
             Size::F64 => Some(8),
         }
     }
@@ -245,6 +247,7 @@ impl std::fmt::Display for Size {
             Size::I16 => write!(f, "u16"),
             Size::I32 => write!(f, "u32"),
 
+            Size::F32 => write!(f, "f32"),
             Size::F64 => write!(f, "f64"),
         }
     }
@@ -385,6 +388,12 @@ pub enum Instr {
         src: Value,
         flags: FlagxGroup,
     },
+
+    X87Pop {
+        /// None = just pop, Some = pop + store
+        dst: Option<Value>,
+        flags: FlagxGroup,
+    },
 }
 
 impl std::fmt::Display for Instr {
@@ -453,6 +462,16 @@ impl std::fmt::Display for Instr {
                 } else {
                     write!(f, "{flags} = x87.push {src}")
                 }
+            }
+            Self::X87Pop { dst, flags } => {
+                match (dst, flags.is_empty()) {
+                    (Some(dst), true) => write!(f, "{dst} = ")?,
+                    (Some(dst), false) => write!(f, "{dst}, {flags} = ")?,
+                    (None, false) => write!(f, "{flags} = ")?,
+                    (None, true) => write!(f, "_ = ")?,
+                }
+
+                write!(f, "x87.pop")
             }
         }
     }
@@ -635,6 +654,9 @@ fn memory_size_to_size(memory_size: iced_x86::MemorySize) -> Option<Size> {
         iced_x86::MemorySize::Int16 => Some(Size::I16),
         iced_x86::MemorySize::Int32 => Some(Size::I32),
 
+        iced_x86::MemorySize::Float32 => Some(Size::F32),
+        iced_x86::MemorySize::Float64 => Some(Size::F64),
+
         iced_x86::MemorySize::DwordOffset => Some(Size::U32),
         _ => None,
     }
@@ -683,6 +705,15 @@ enum Operand {
 }
 
 impl Operand {
+    fn size(&self) -> Option<Size> {
+        match self {
+            Operand::Reg(reg) => reg.size(),
+            Operand::SubReg { size, .. } => Some(*size),
+            Operand::Imm(imm) => imm.size(),
+            Operand::Memory { size, .. } => Some(*size),
+        }
+    }
+
     fn lower_load(self, ctx: &mut LowerCtx) -> Value {
         match self {
             Operand::Reg(reg) => Value::Reg(reg),
@@ -1034,11 +1065,25 @@ fn lower_sete_setne(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 
 fn lower_fild(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let value = lower_operand(ctx, ins, 0).lower_load(ctx);
-    let value = emit_cast(ctx, value, Size::F64);
+    let value = emit_convert(ctx, value, Size::F64);
     ctx.emit(Instr::X87Push {
         src: value,
         flags: FlagxGroup::X87_C1,
     })
+}
+
+fn lower_fstp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let dest = lower_operand(ctx, ins, 0);
+
+    let value = ctx.new_temp(Size::F64);
+    ctx.emit(Instr::X87Pop {
+        dst: Some(value),
+        flags: FlagxGroup::X87_C1,
+    });
+
+    let size = dest.size().unwrap();
+    let value = emit_convert(ctx, value, size);
+    dest.lower_store(ctx, value);
 }
 
 #[derive(Debug, Clone)]
@@ -1324,7 +1369,7 @@ fn emit_bin_with_flags(
     res
 }
 
-fn emit_cast(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
+fn emit_convert(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
     let res = ctx.new_temp(size);
     ctx.emit(Instr::Convert {
         dst: res,
@@ -1412,6 +1457,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Sete | Mnemonic::Setne => lower_sete_setne(ctx, ins),
 
         Mnemonic::Fild => lower_fild(ctx, ins),
+        Mnemonic::Fstp => lower_fstp(ctx, ins),
 
         _ => {
             eprintln!("{}", ctx);
