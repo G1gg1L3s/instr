@@ -388,6 +388,8 @@ pub enum Instr {
         src: Value,
     },
 
+    Nop,
+
     X87Push {
         src: Value,
         flags: FlagxGroup,
@@ -460,6 +462,7 @@ impl std::fmt::Display for Instr {
                 let dst_size = dst.size().unwrap();
                 write!(f, "{dst} = {src_size}to{dst_size} {src}")
             }
+            Self::Nop => write!(f, "nop"),
             Self::X87Push { src, flags } => {
                 if flags.is_empty() {
                     write!(f, "x87.push {src}")
@@ -1479,6 +1482,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
 
         Mnemonic::Fild => lower_fild(ctx, ins),
         Mnemonic::Fstp => lower_fstp(ctx, ins),
+        Mnemonic::Nop => ctx.emit(Instr::Nop),
 
         _ => {
             eprintln!("{}", ctx);
