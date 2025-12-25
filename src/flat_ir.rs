@@ -22,17 +22,24 @@ impl Reg {
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Flagx: u8 {
+    pub struct Flagx: u16 {
         /// Carry flag
-        const CARRY =    0b1;
+        const CARRY =    1 << 0;
         /// Zero flag
-        const ZERO =     0b10;
+        const ZERO =     1 << 1;
         /// Sign flag
-        const SIGN =     0b100;
+        const SIGN =     1 << 2;
         /// Overflow flag
-        const OVERFLOW = 0b1000;
+        const OVERFLOW = 1 << 3;
         /// Parity flag
-        const PARITY =   0b10000;
+        const PARITY =   1 << 4;
+
+        // X87 C0
+        const C0     =   1 << 5;
+        // X87 C1
+        const C1     =   1 << 6;
+        // X87 C2
+        const C2     =   1 << 7;
     }
 }
 
@@ -44,6 +51,7 @@ impl std::fmt::Display for FlagxGroup {
         match *self {
             x if x == Self::ALL => write!(f, "f:*"),
             x if x == Self::NOCARRY => write!(f, "f:!c"),
+            x if x == Self::X87_C1 => write!(f, "f:c1"),
             _ => {
                 write!(f, "f:")?;
                 for flag in self.0 {
@@ -67,6 +75,12 @@ impl FlagxGroup {
     );
 
     pub const NOCARRY: Self = Self(Self::ALL.0.difference(Flagx::CARRY));
+
+    pub const X87_C1: Self = Self(Flagx::C1);
+
+    pub fn is_empty(self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -158,12 +172,13 @@ pub enum Imm {
     U32(u32),
 }
 impl Imm {
-    fn new(val: u8, size: Size) -> Option<Self> {
+    fn new_u(val: u8, size: Size) -> Option<Self> {
         match size {
-            Size::U1 => None,
             Size::U8 => Some(Self::U8(val)),
             Size::U16 => Some(Self::U16(val.into())),
             Size::U32 => Some(Self::U32(val.into())),
+
+            Size::U1 | Size::I8 | Size::I16 | Size::I32 | Size::F64 => None,
         }
     }
 
@@ -192,14 +207,27 @@ pub enum Size {
     U8,
     U16,
     U32,
+
+    I8,
+    I16,
+    I32,
+
+    F64,
 }
 impl Size {
     fn to_bytes(&self) -> Option<u32> {
         match self {
             Size::U1 => None,
+
             Size::U8 => Some(1),
             Size::U16 => Some(2),
             Size::U32 => Some(4),
+
+            Size::I8 => Some(1),
+            Size::I16 => Some(2),
+            Size::I32 => Some(4),
+
+            Size::F64 => Some(8),
         }
     }
 }
@@ -208,9 +236,16 @@ impl std::fmt::Display for Size {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::U1 => write!(f, "bool"),
+
             Size::U8 => write!(f, "u8"),
             Size::U16 => write!(f, "u16"),
             Size::U32 => write!(f, "u32"),
+
+            Size::I8 => write!(f, "u8"),
+            Size::I16 => write!(f, "u16"),
+            Size::I32 => write!(f, "u32"),
+
+            Size::F64 => write!(f, "f64"),
         }
     }
 }
@@ -340,6 +375,16 @@ pub enum Instr {
         value: Value,
         start: u8,
     },
+
+    Convert {
+        dst: Value,
+        src: Value,
+    },
+
+    X87Push {
+        src: Value,
+        flags: FlagxGroup,
+    },
 }
 
 impl std::fmt::Display for Instr {
@@ -352,7 +397,7 @@ impl std::fmt::Display for Instr {
                 rhs,
                 flags,
             } => {
-                if flags.0.is_empty() {
+                if flags.is_empty() {
                     write!(f, "{dst} = {lhs} {op} {rhs}")
                 } else {
                     write!(f, "{dst}, {flags} = {lhs} {op} {rhs}")
@@ -396,6 +441,18 @@ impl std::fmt::Display for Instr {
             } => {
                 let end = u32::from(*start) + value.size().unwrap().to_bytes().unwrap();
                 write!(f, "{dst} = slice {base}[{start}..{end}] set {value}")
+            }
+            Self::Convert { dst, src } => {
+                let src_size = src.size().unwrap();
+                let dst_size = dst.size().unwrap();
+                write!(f, "{dst} = {src_size}to{dst_size} {src}")
+            }
+            Self::X87Push { src, flags } => {
+                if flags.is_empty() {
+                    write!(f, "x87.push {src}")
+                } else {
+                    write!(f, "{flags} = x87.push {src}")
+                }
             }
         }
     }
@@ -573,6 +630,11 @@ fn memory_size_to_size(memory_size: iced_x86::MemorySize) -> Option<Size> {
         iced_x86::MemorySize::UInt8 => Some(Size::U8),
         iced_x86::MemorySize::UInt16 => Some(Size::U16),
         iced_x86::MemorySize::UInt32 => Some(Size::U32),
+
+        iced_x86::MemorySize::Int8 => Some(Size::I8),
+        iced_x86::MemorySize::Int16 => Some(Size::I16),
+        iced_x86::MemorySize::Int32 => Some(Size::I32),
+
         iced_x86::MemorySize::DwordOffset => Some(Size::U32),
         _ => None,
     }
@@ -921,7 +983,7 @@ fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
         ctx,
         BinOp::BitAnd,
         rhs,
-        Value::Imm(Imm::new(0x1F, rhs_size).unwrap()),
+        Value::Imm(Imm::new_u(0x1F, rhs_size).unwrap()),
     );
 
     let result = emit_bin_with_flags(ctx, op, lhs, masked_count, FlagxGroup::ALL);
@@ -968,6 +1030,15 @@ fn lower_sete_setne(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let tmp = ctx.new_temp(Size::U8);
     ctx.emit(Instr::ZeroExtend { dst: tmp, src });
     lhs.lower_store(ctx, tmp);
+}
+
+fn lower_fild(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let value = lower_operand(ctx, ins, 0).lower_load(ctx);
+    let value = emit_cast(ctx, value, Size::F64);
+    ctx.emit(Instr::X87Push {
+        src: value,
+        flags: FlagxGroup::X87_C1,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -1059,7 +1130,7 @@ fn lower_inc_dec(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let operand = lower_operand(ctx, ins, 0);
     let lhs = operand.lower_load(ctx);
     let size = lhs.size().unwrap();
-    let imm = Imm::new(1, size).unwrap();
+    let imm = Imm::new_u(1, size).unwrap();
 
     let op = if ins.mnemonic() == Mnemonic::Inc {
         BinOp::Add
@@ -1076,7 +1147,7 @@ fn lower_neg(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let value = operand.lower_load(ctx);
     let size = value.size().unwrap();
 
-    let lhs = Value::Imm(Imm::new(0, size).unwrap());
+    let lhs = Value::Imm(Imm::new_u(0, size).unwrap());
     let new = emit_bin_with_flags(ctx, BinOp::Sub, lhs, value, FlagxGroup::ALL);
 
     operand.lower_store(ctx, new);
@@ -1253,6 +1324,15 @@ fn emit_bin_with_flags(
     res
 }
 
+fn emit_cast(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
+    let res = ctx.new_temp(size);
+    ctx.emit(Instr::Convert {
+        dst: res,
+        src: value,
+    });
+    res
+}
+
 #[derive(Debug)]
 pub struct Block {
     pub addr: Addr,
@@ -1330,6 +1410,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Ret => return Some(lower_ret(ctx, ins)),
 
         Mnemonic::Sete | Mnemonic::Setne => lower_sete_setne(ctx, ins),
+
+        Mnemonic::Fild => lower_fild(ctx, ins),
 
         _ => {
             eprintln!("{}", ctx);
