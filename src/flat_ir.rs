@@ -1354,6 +1354,28 @@ fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: 
     }
 }
 
+fn lower_fxch(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let (lhs, rhs) = match ins.op_count() {
+        1 => (Value::Reg(Reg::St(0)), Value::Reg(Reg::St(1))),
+        2 => (
+            lower_operand(ctx, ins, 0).lower_load(ctx),
+            lower_operand(ctx, ins, 1).lower_load(ctx),
+        ),
+        _ => unreachable!(),
+    };
+
+    let temp = ctx.new_temp(Size::F64);
+    ctx.emit(Instr::Assign {
+        dst: temp,
+        src: lhs,
+    });
+    ctx.emit(Instr::Assign { dst: lhs, src: rhs });
+    ctx.emit(Instr::Assign {
+        dst: rhs,
+        src: temp,
+    });
+}
+
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
@@ -1994,6 +2016,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mulu, Fpop::No, FRev::No),
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes, FRev::No),
         Mnemonic::Fdivr => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::Yes),
+
+        Mnemonic::Fxch => lower_fxch(ctx, ins),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
