@@ -935,6 +935,12 @@ fn lower_subregister(reg: iced_x86::Register) -> Option<Operand> {
             size: Size::U16,
         },
 
+        Register::BP => Operand::SubReg {
+            reg: Reg::Ebp,
+            lo: 0,
+            size: Size::U16,
+        },
+
         _ => return None,
     })
 }
