@@ -1167,17 +1167,22 @@ fn lower_mul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 }
 
 fn lower_imul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let (lhs, rhs) = match ins.op_count() {
+    let (dst, lhs, rhs) = match ins.op_count() {
         2 => {
             let lhs = lower_operand(ctx, ins, 0);
             let rhs = lower_operand(ctx, ins, 1);
-            (lhs, rhs)
+            (lhs, lhs, rhs)
+        }
+        3 => {
+            let dst = lower_operand(ctx, ins, 0);
+            let lhs = lower_operand(ctx, ins, 1);
+            let rhs = lower_operand(ctx, ins, 2);
+            (dst, lhs, rhs)
         }
         x => panic!("unknown op count {x} for {ins} at {}", ctx.addr),
     };
 
-    let lhs_size = lhs.size().unwrap();
-    let lhs_signed_size = lhs_size.to_signed().unwrap();
+    let lhs_signed_size = lhs.size().unwrap().to_signed().unwrap();
     let rhs_signed_size = rhs.size().unwrap().to_signed().unwrap();
 
     let lhs_val = lhs.lower_load(ctx);
@@ -1193,8 +1198,10 @@ fn lower_imul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         rhs_val,
         FlagxGroup::CARRY_OVERFOW,
     );
-    let result = emit_convert(ctx, result, lhs_size);
-    lhs.lower_store(ctx, result);
+
+    let dst_size = dst.size().unwrap();
+    let result = emit_convert(ctx, result, dst_size);
+    dst.lower_store(ctx, result);
 }
 
 fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
