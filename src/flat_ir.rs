@@ -1304,7 +1304,12 @@ enum Fpop {
     Yes,
 }
 
-fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: Fpop) {
+enum FRev {
+    No,
+    Yes,
+}
+
+fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: Fpop, frev: FRev) {
     let (lhs, rhs) = match ins.op_count() {
         1 => {
             let rhs = lower_operand(ctx, ins, 0).lower_load(ctx);
@@ -1314,7 +1319,8 @@ fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: 
         }
 
         2 => {
-            // Always load because lhs can only be register, so it's okay to assign latter
+            // Always load because lhs can only be register (or rhs if frev),
+            // so it's okay to assign latter
             let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
             let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
             (lhs, rhs)
@@ -1323,9 +1329,15 @@ fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: 
         x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
     };
 
+    let (dst, lhs, rhs) = if let FRev::Yes = frev {
+        (lhs, rhs, lhs)
+    } else {
+        (lhs, lhs, rhs)
+    };
+
     let result = emit_bin_with_flags(ctx, op, lhs, rhs, FlagxGroup::X87_C1);
     ctx.emit(Instr::Assign {
-        dst: lhs,
+        dst: dst,
         src: result,
     });
 
@@ -1970,9 +1982,10 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
 
         Mnemonic::Fild => lower_fild(ctx, ins),
         Mnemonic::Fstp => lower_fstp(ctx, ins),
-        Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add, Fpop::No),
-        Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mulu, Fpop::No),
-        Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes),
+        Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add, Fpop::No, FRev::No),
+        Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mulu, Fpop::No, FRev::No),
+        Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes, FRev::No),
+        Mnemonic::Fdivr => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::Yes),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
