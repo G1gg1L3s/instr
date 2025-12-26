@@ -1444,6 +1444,15 @@ fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
+fn stos_elem_size(mnemonic: Mnemonic) -> Option<(Size, u32)> {
+    match mnemonic {
+        Mnemonic::Stosb => Some((Size::U8, 1)),
+        Mnemonic::Stosw => Some((Size::U16, 2)),
+        Mnemonic::Stosd => Some((Size::U32, 4)),
+        _ => None,
+    }
+}
+
 fn movs_elem_size(mnemonic: Mnemonic) -> Option<(Size, u32)> {
     match mnemonic {
         Mnemonic::Movsb => Some((Size::U8, 1)),
@@ -1452,57 +1461,78 @@ fn movs_elem_size(mnemonic: Mnemonic) -> Option<(Size, u32)> {
         _ => None,
     }
 }
+fn lower_stos(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let (elem_size, stride) = stos_elem_size(ins.mnemonic()).expect("not a STOS instruction");
 
-fn lower_stosd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let edi = Value::Reg(Reg::Edi);
+    let ecx = Value::Reg(Reg::Ecx);
+
+    // Value comes from AL / AX / EAX depending on size
+    let value = match elem_size {
+        Size::U8 => lower_subregister(iced_x86::Register::AL)
+            .unwrap()
+            .lower_load(ctx),
+        Size::U16 => lower_subregister(iced_x86::Register::AX)
+            .unwrap()
+            .lower_load(ctx),
+        Size::U32 => Value::Reg(Reg::Eax),
+        _ => unreachable!(),
+    };
+
+    // =========================
+    // Non-REP STOS*
+    // =========================
     if !ins.has_rep_prefix() {
-        // Fallback: single store
-        let edi = Value::Reg(Reg::Edi);
-        let eax = Value::Reg(Reg::Eax);
-
         ctx.emit(Instr::Store {
             addr: edi.clone(),
-            src: eax,
+            src: value,
             space: MemSpace::Default,
         });
 
-        let new_edi = emit_bin(ctx, BinOp::Add, edi, Value::Imm(Imm::U32(4)));
+        // EDI += stride
+        let new_edi = ctx.new_temp(Size::U32);
+        ctx.emit(Instr::BinOp {
+            op: BinOp::Add,
+            dst: new_edi,
+            lhs: edi.clone(),
+            rhs: Value::Imm(Imm::U32(stride)),
+            flags: FlagxGroup::NONE,
+        });
         ctx.emit(Instr::Assign {
             dst: edi,
             src: new_edi,
         });
+
         return;
     }
 
-    // === REP STOSD → Memset ===
-
-    let edi = Value::Reg(Reg::Edi);
-    let eax = Value::Reg(Reg::Eax);
-    let ecx = Value::Reg(Reg::Ecx);
-
-    // count_bytes = ECX * 4
-    let count_bytes = ctx.new_temp(Size::U32);
+    // =========================
+    // REP STOS* → Memset
+    // =========================
 
     ctx.emit(Instr::Memset {
-        addr: edi.clone(),
-        value: eax,
+        addr: edi,
+        value,
         count: ecx,
     });
 
+    // byte_count = ECX * stride
+    let byte_count = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Mul,
-        dst: count_bytes,
-        lhs: ecx.clone(),
-        rhs: Value::Imm(Imm::U32(4)),
+        dst: byte_count,
+        lhs: ecx,
+        rhs: Value::Imm(Imm::U32(stride)),
         flags: FlagxGroup::NONE,
     });
 
-    // EDI += ECX * 4
+    // EDI += ECX * stride
     let new_edi = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Add,
         dst: new_edi,
-        lhs: edi.clone(),
-        rhs: count_bytes,
+        lhs: edi,
+        rhs: byte_count,
         flags: FlagxGroup::NONE,
     });
     ctx.emit(Instr::Assign {
@@ -1510,6 +1540,7 @@ fn lower_stosd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         src: new_edi,
     });
 
+    // ECX = 0
     ctx.emit(Instr::Assign {
         dst: ecx,
         src: Value::Imm(Imm::U32(0)),
@@ -1781,7 +1812,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mul, Fpop::No),
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes),
 
-        Mnemonic::Stosd => lower_stosd(ctx, ins),
+        Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd   => lower_movs(ctx, ins),
 
         Mnemonic::Nop => ctx.emit(Instr::Nop),
