@@ -1038,7 +1038,8 @@ fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
         Value::Imm(Imm::new_u(0x1F, rhs_size).unwrap()),
     );
 
-    let result = emit_bin_with_flags(ctx, op, lhs, masked_count, FlagxGroup::ALL);
+    // Size is unchecked because rhs is always u8
+    let result = emit_bin_with_flags_unchecked_size(ctx, op, lhs, masked_count, FlagxGroup::ALL);
     dst_operand.lower_store(ctx, result);
 }
 
@@ -1113,6 +1114,7 @@ fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
     }
 
     let rhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+    let rhs = emit_convert(ctx, rhs, Size::F64);
     let st0 = Value::Reg(Reg::St(0));
     let result = emit_bin_with_flags(ctx, op, st0, rhs, FlagxGroup::X87_C1);
     ctx.emit(Instr::Assign {
@@ -1404,7 +1406,27 @@ fn emit_bin_with_flags(
     rhs: Value,
     flags: FlagxGroup,
 ) -> Value {
-    let res = ctx.new_temp(Size::U1);
+    let lhs_size = lhs.size().unwrap();
+    let rhs_size = rhs.size().unwrap();
+    if lhs_size != rhs_size {
+        panic!(
+            "mismtach of binary operation sizes: {lhs_size} != {rhs_size}, for {lhs} {op} {rhs} at {}",
+            ctx.addr
+        );
+    }
+
+    emit_bin_with_flags_unchecked_size(ctx, op, lhs, rhs, flags)
+}
+
+fn emit_bin_with_flags_unchecked_size(
+    ctx: &mut LowerCtx,
+    op: BinOp,
+    lhs: Value,
+    rhs: Value,
+    flags: FlagxGroup,
+) -> Value {
+    let lhs_size = lhs.size().unwrap();
+    let res = ctx.new_temp(lhs_size);
     ctx.emit(Instr::BinOp {
         op,
         dst: res,
@@ -1416,12 +1438,17 @@ fn emit_bin_with_flags(
 }
 
 fn emit_convert(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
-    let res = ctx.new_temp(size);
-    ctx.emit(Instr::Convert {
-        dst: res,
-        src: value,
-    });
-    res
+    let last_size = value.size();
+    if last_size == Some(size) {
+        value
+    } else {
+        let res = ctx.new_temp(size);
+        ctx.emit(Instr::Convert {
+            dst: res,
+            src: value,
+        });
+        res
+    }
 }
 
 #[derive(Debug)]
