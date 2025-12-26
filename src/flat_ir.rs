@@ -330,7 +330,7 @@ impl Value {
             Value::Reg(reg) => reg.size(),
             Value::Imm(imm) => imm.size(),
             Value::Temp(temp) => Some(temp.size),
-            Value::Flag(_) => None,
+            Value::Flag(_) => Some(Size::U1),
         }
     }
 }
@@ -405,11 +405,6 @@ pub enum Instr {
     },
 
     Not {
-        dst: Value,
-        src: Value,
-    },
-
-    ZeroExtend {
         dst: Value,
         src: Value,
     },
@@ -496,10 +491,6 @@ impl std::fmt::Display for Instr {
                 write!(f, "call {target}")
             }
             Self::Not { dst, src } => write!(f, "{dst} = not {src}"),
-            Self::ZeroExtend { dst, src } => {
-                let dst_size = dst.size().unwrap();
-                write!(f, "{dst} = {dst_size}({src})")
-            }
             Self::SliceBytes { dst, src, start } => {
                 let end = u32::from(*start) + dst.size().unwrap().to_bytes().unwrap();
 
@@ -1275,7 +1266,7 @@ fn lower_sete_setne(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     };
 
     let tmp = ctx.new_temp(Size::U8);
-    ctx.emit(Instr::ZeroExtend { dst: tmp, src });
+    ctx.emit(Instr::Convert { dst: tmp, src });
     lhs.lower_store(ctx, tmp);
 }
 
@@ -1568,7 +1559,7 @@ fn lower_leave(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction) {
 
 fn lower_flag_as_int(ctx: &mut LowerCtx, flag: Flag, size: Size) -> Value {
     let tmp = ctx.new_temp(size);
-    ctx.emit(Instr::ZeroExtend {
+    ctx.emit(Instr::Convert {
         dst: tmp,
         src: Value::Flag(flag),
     });
