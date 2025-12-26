@@ -194,7 +194,14 @@ impl Imm {
             Size::U16 => Some(Self::U16(val.into())),
             Size::U32 => Some(Self::U32(val.into())),
 
-            Size::U1 | Size::I8 | Size::I16 | Size::I32 | Size::F32 | Size::F64 | Size::U64 => None,
+            Size::U1
+            | Size::I8
+            | Size::I16
+            | Size::I32
+            | Size::F32
+            | Size::F64
+            | Size::U64
+            | Size::I64 => None,
         }
     }
 
@@ -228,6 +235,7 @@ pub enum Size {
     I8,
     I16,
     I32,
+    I64,
 
     F32,
     F64,
@@ -245,9 +253,21 @@ impl Size {
             Size::I8 => Some(1),
             Size::I16 => Some(2),
             Size::I32 => Some(4),
+            Size::I64 => Some(8),
 
             Size::F32 => Some(4),
             Size::F64 => Some(8),
+        }
+    }
+
+    fn to_signed(self) -> Option<Self> {
+        match self {
+            Size::U1 => None,
+            Size::U8 | Size::I8 => Some(Size::I8),
+            Size::U16 | Size::I16 => Some(Size::I16),
+            Size::U32 | Size::I32 => Some(Size::I32),
+            Size::U64 | Size::I64 => Some(Size::I64),
+            Size::F32 | Size::F64 => Some(self),
         }
     }
 }
@@ -262,9 +282,10 @@ impl std::fmt::Display for Size {
             Size::U32 => write!(f, "u32"),
             Size::U64 => write!(f, "u64"),
 
-            Size::I8 => write!(f, "u8"),
-            Size::I16 => write!(f, "u16"),
-            Size::I32 => write!(f, "u32"),
+            Size::I8 => write!(f, "i8"),
+            Size::I16 => write!(f, "i16"),
+            Size::I32 => write!(f, "i32"),
+            Size::I64 => write!(f, "i64"),
 
             Size::F32 => write!(f, "f32"),
             Size::F64 => write!(f, "f64"),
@@ -326,7 +347,8 @@ pub enum MemSpace {
 pub enum BinOp {
     Add,
     Sub,
-    Mul,
+    Mulu,
+    Muls,
     Div,
     Xor,
     BitAnd,
@@ -342,7 +364,8 @@ impl std::fmt::Display for BinOp {
         match self {
             BinOp::Add => write!(f, "+"),
             BinOp::Sub => write!(f, "-"),
-            BinOp::Mul => write!(f, "*"),
+            BinOp::Mulu => write!(f, "u*"),
+            BinOp::Muls => write!(f, "s*"),
             BinOp::Div => write!(f, "/"),
             BinOp::Xor => write!(f, "xor"),
             BinOp::BitAnd => write!(f, "&"),
@@ -637,7 +660,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
         } else {
             let scaled = ctx.new_temp(Size::U32);
             ctx.emit(Instr::BinOp {
-                op: BinOp::Mul,
+                op: BinOp::Mulu,
                 dst: scaled.clone(),
                 lhs: idx,
                 rhs: Value::Imm(Imm::U32(scale)),
@@ -1107,7 +1130,7 @@ fn lower_mul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 
     let full = emit_bin_with_flags(
         ctx,
-        BinOp::Mul,
+        BinOp::Mulu,
         lhs_wide,
         rhs_wide,
         FlagxGroup::CARRY_OVERFOW,
@@ -1141,6 +1164,37 @@ fn lower_mul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         }
         _ => unreachable!(),
     }
+}
+
+fn lower_imul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let (lhs, rhs) = match ins.op_count() {
+        2 => {
+            let lhs = lower_operand(ctx, ins, 0);
+            let rhs = lower_operand(ctx, ins, 1);
+            (lhs, rhs)
+        }
+        x => panic!("unknown op count {x} for {ins} at {}", ctx.addr),
+    };
+
+    let lhs_size = lhs.size().unwrap();
+    let lhs_signed_size = lhs_size.to_signed().unwrap();
+    let rhs_signed_size = rhs.size().unwrap().to_signed().unwrap();
+
+    let lhs_val = lhs.lower_load(ctx);
+    let lhs_val = emit_convert(ctx, lhs_val, lhs_signed_size);
+
+    let rhs_val = rhs.lower_load(ctx);
+    let rhs_val = emit_convert(ctx, rhs_val, rhs_signed_size);
+
+    let result = emit_bin_with_flags(
+        ctx,
+        BinOp::Muls,
+        lhs_val,
+        rhs_val,
+        FlagxGroup::CARRY_OVERFOW,
+    );
+    let result = emit_convert(ctx, result, lhs_size);
+    lhs.lower_store(ctx, result);
 }
 
 fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
@@ -1606,7 +1660,7 @@ fn lower_stos(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     // byte_count = ECX * stride
     let byte_count = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
-        op: BinOp::Mul,
+        op: BinOp::Mulu,
         dst: byte_count,
         lhs: ecx,
         rhs: Value::Imm(Imm::U32(stride)),
@@ -1705,7 +1759,7 @@ fn lower_movs(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     // byte_count = ECX * stride
     let byte_count = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
-        op: BinOp::Mul,
+        op: BinOp::Mulu,
         dst: byte_count,
         lhs: ecx.clone(),
         rhs: Value::Imm(Imm::U32(stride)),
@@ -1874,12 +1928,13 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Add => lower_bin_set_flags(ctx, ins, BinOp::Add),
         Mnemonic::Sub => lower_bin_set_flags(ctx, ins, BinOp::Sub),
         Mnemonic::Sbb => lower_sbb(ctx, ins),
-        
+
         Mnemonic::Or => lower_binary_bit_op(ctx, ins, BinOp::BitOr),
         Mnemonic::And => lower_binary_bit_op(ctx, ins, BinOp::BitAnd),
         Mnemonic::Xor => lower_binary_bit_op(ctx, ins, BinOp::Xor),
 
         Mnemonic::Mul => lower_mul(ctx, ins),
+        Mnemonic::Imul => lower_imul(ctx, ins),
 
         Mnemonic::Shl => lower_shift(ctx, ins, BinOp::ShiftLeft),
         Mnemonic::Shr => lower_shift(ctx, ins, BinOp::ShifRight),
@@ -1898,7 +1953,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Fild => lower_fild(ctx, ins),
         Mnemonic::Fstp => lower_fstp(ctx, ins),
         Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add, Fpop::No),
-        Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mul, Fpop::No),
+        Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mulu, Fpop::No),
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
