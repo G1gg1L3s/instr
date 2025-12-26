@@ -1444,6 +1444,15 @@ fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
+fn movs_elem_size(mnemonic: Mnemonic) -> Option<(Size, u32)> {
+    match mnemonic {
+        Mnemonic::Movsb => Some((Size::U8, 1)),
+        Mnemonic::Movsw => Some((Size::U16, 2)),
+        Mnemonic::Movsd => Some((Size::U32, 4)),
+        _ => None,
+    }
+}
+
 fn lower_stosd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     if !ins.has_rep_prefix() {
         // Fallback: single store
@@ -1507,31 +1516,55 @@ fn lower_stosd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
-fn lower_movsd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+fn lower_movs(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let (elem_size, stride) = movs_elem_size(ins.mnemonic()).expect("not a MOVS instruction");
+
     let esi = Value::Reg(Reg::Esi);
     let edi = Value::Reg(Reg::Edi);
+    let ecx = Value::Reg(Reg::Ecx);
 
+    // =========================
+    // Non-REP MOVS*
+    // =========================
     if !ins.has_rep_prefix() {
-        let tmp = ctx.new_temp(Size::U32);
+        // tmp = [ESI]
+        let tmp = ctx.new_temp(elem_size);
         ctx.emit(Instr::Load {
             dst: tmp,
             addr: esi.clone(),
             space: MemSpace::Default,
         });
 
+        // [EDI] = tmp
         ctx.emit(Instr::Store {
             addr: edi.clone(),
             src: tmp,
             space: MemSpace::Default,
         });
 
-        let new_esi = emit_bin(ctx, BinOp::Add, esi.clone(), Value::Imm(Imm::U32(4)));
+        // ESI += stride
+        let new_esi = ctx.new_temp(Size::U32);
+        ctx.emit(Instr::BinOp {
+            op: BinOp::Add,
+            dst: new_esi,
+            lhs: esi.clone(),
+            rhs: Value::Imm(Imm::U32(stride)),
+            flags: FlagxGroup::NONE,
+        });
         ctx.emit(Instr::Assign {
             dst: esi,
             src: new_esi,
         });
 
-        let new_edi = emit_bin(ctx, BinOp::Add, edi.clone(), Value::Imm(Imm::U32(4)));
+        // EDI += stride
+        let new_edi = ctx.new_temp(Size::U32);
+        ctx.emit(Instr::BinOp {
+            op: BinOp::Add,
+            dst: new_edi,
+            lhs: edi.clone(),
+            rhs: Value::Imm(Imm::U32(stride)),
+            flags: FlagxGroup::NONE,
+        });
         ctx.emit(Instr::Assign {
             dst: edi,
             src: new_edi,
@@ -1540,27 +1573,28 @@ fn lower_movsd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         return;
     }
 
-    // ----------------------------
-    // REP MOVSD → Memcpy
-    // ----------------------------
-    let ecx = Value::Reg(Reg::Ecx);
+    // =========================
+    // REP MOVS* → Memcpy
+    // =========================
 
     ctx.emit(Instr::Memcpy {
         dst_addr: edi.clone(),
         src_addr: esi.clone(),
-        count: ecx.clone(),
-        size: Size::U32,
+        count: ecx.clone(), // element count
+        size: elem_size,
     });
 
+    // byte_count = ECX * stride
     let byte_count = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Mul,
         dst: byte_count,
         lhs: ecx.clone(),
-        rhs: Value::Imm(Imm::U32(4)),
+        rhs: Value::Imm(Imm::U32(stride)),
         flags: FlagxGroup::NONE,
     });
 
+    // EDI += ECX * stride
     let new_edi = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Add,
@@ -1574,6 +1608,7 @@ fn lower_movsd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         src: new_edi,
     });
 
+    // ESI += ECX * stride
     let new_esi = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Add,
@@ -1587,6 +1622,7 @@ fn lower_movsd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         src: new_esi,
     });
 
+    // ECX = 0
     ctx.emit(Instr::Assign {
         dst: ecx,
         src: Value::Imm(Imm::U32(0)),
@@ -1746,7 +1782,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes),
 
         Mnemonic::Stosd => lower_stosd(ctx, ins),
-        Mnemonic::Movsd => lower_movsd(ctx, ins),
+        Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd   => lower_movs(ctx, ins),
 
         Mnemonic::Nop => ctx.emit(Instr::Nop),
 
