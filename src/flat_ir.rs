@@ -321,8 +321,9 @@ pub enum MemSpace {
 pub enum BinOp {
     Add,
     Sub,
-    Xor,
     Mul,
+    Div,
+    Xor,
     BitAnd,
     BitOr,
 
@@ -337,6 +338,7 @@ impl std::fmt::Display for BinOp {
             BinOp::Add => write!(f, "+"),
             BinOp::Sub => write!(f, "-"),
             BinOp::Mul => write!(f, "*"),
+            BinOp::Div => write!(f, "/"),
             BinOp::Xor => write!(f, "xor"),
             BinOp::BitAnd => write!(f, "&"),
             BinOp::BitOr => write!(f, "|"),
@@ -570,6 +572,16 @@ fn map_reg(reg: iced_x86::Register) -> Option<Reg> {
         R::EDI => Some(Reg::Edi),
         R::EBP => Some(Reg::Ebp),
         R::ESP => Some(Reg::Esp),
+
+        R::ST0 => Some(Reg::St(0)),
+        R::ST1 => Some(Reg::St(1)),
+        R::ST2 => Some(Reg::St(2)),
+        R::ST3 => Some(Reg::St(3)),
+        R::ST4 => Some(Reg::St(4)),
+        R::ST5 => Some(Reg::St(5)),
+        R::ST6 => Some(Reg::St(6)),
+        R::ST7 => Some(Reg::St(7)),
+
         _ => None,
     }
 }
@@ -1108,19 +1120,42 @@ fn lower_fstp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     dest.lower_store(ctx, value);
 }
 
-fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
-    if ins.op_count() != 1 {
-        panic!("unkown operands: {ins} at {}", Addr(ins.ip32()));
-    }
+enum Fpop {
+    No,
+    Yes,
+}
 
-    let rhs = lower_operand(ctx, ins, 0).lower_load(ctx);
-    let rhs = emit_convert(ctx, rhs, Size::F64);
-    let st0 = Value::Reg(Reg::St(0));
-    let result = emit_bin_with_flags(ctx, op, st0, rhs, FlagxGroup::X87_C1);
+fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: Fpop) {
+    let (lhs, rhs) = match ins.op_count() {
+        1 => {
+            let rhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+            let rhs = emit_convert(ctx, rhs, Size::F64);
+            let st0 = Value::Reg(Reg::St(0));
+            (st0, rhs)
+        }
+
+        2 => {
+            // Always load because lhs can only be register, so it's okay to assign latter
+            let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+            let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
+            (lhs, rhs)
+        }
+
+        x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
+    };
+
+    let result = emit_bin_with_flags(ctx, op, lhs, rhs, FlagxGroup::X87_C1);
     ctx.emit(Instr::Assign {
-        dst: st0,
+        dst: lhs,
         src: result,
     });
+
+    if let Fpop::Yes = fpop {
+        ctx.emit(Instr::X87Pop {
+            dst: None,
+            flags: FlagxGroup::NONE,
+        });
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1537,7 +1572,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
 
         Mnemonic::Fild => lower_fild(ctx, ins),
         Mnemonic::Fstp => lower_fstp(ctx, ins),
-        Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add),
+        Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add, Fpop::No),
+        Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes),
 
         Mnemonic::Nop => ctx.emit(Instr::Nop),
 
