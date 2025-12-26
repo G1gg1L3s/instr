@@ -757,15 +757,29 @@ fn lower_memory(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Operand {
 }
 
 fn lower_mov(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    lower_bin_operation(ctx, ins, |ctx, ins, lhs, rhs| {
-        if ins.mnemonic() == Mnemonic::Movzx {
+    lower_bin_operation(ctx, ins, |ctx, ins, lhs, rhs| match ins.mnemonic() {
+        Mnemonic::Movzx => {
             let target_size = lhs.size().unwrap();
             let res = ctx.new_temp(target_size);
-            ctx.emit(Instr::ZeroExtend { dst: res, src: rhs });
+            ctx.emit(Instr::Convert { dst: res, src: rhs });
             res
-        } else {
-            rhs
         }
+        Mnemonic::Movsx => {
+            let target_size = lhs.size().unwrap();
+            let target_size_signed = target_size.to_signed().unwrap();
+            let res_signed = ctx.new_temp(target_size_signed);
+            let res = ctx.new_temp(target_size);
+            ctx.emit(Instr::Convert {
+                dst: res_signed,
+                src: rhs,
+            });
+            ctx.emit(Instr::Convert {
+                dst: res,
+                src: res_signed,
+            });
+            res
+        }
+        _ => rhs,
     });
 }
 
@@ -1911,7 +1925,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Leave => lower_leave(ctx, ins),
 
         Mnemonic::Call => lower_call(ctx, ins),
-        Mnemonic::Mov | Mnemonic::Movzx => lower_mov(ctx, ins),
+        Mnemonic::Mov | Mnemonic::Movzx | Mnemonic::Movsx => lower_mov(ctx, ins),
         Mnemonic::Cmp => lower_cmp(ctx, ins),
         Mnemonic::Test => lower_test(ctx, ins),
         Mnemonic::Je // zf = 1
