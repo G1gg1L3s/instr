@@ -422,6 +422,13 @@ pub enum Instr {
         value: Value,
         count: Value,
     },
+
+    Memcpy {
+        dst_addr: Value,
+        src_addr: Value,
+        count: Value,
+        size: Size,
+    },
 }
 
 impl std::fmt::Display for Instr {
@@ -503,6 +510,12 @@ impl std::fmt::Display for Instr {
                 write!(f, "x87.pop")
             }
             Self::Memset { addr, value, count } => write!(f, "__memset({addr}, {value}, {count})"),
+            Self::Memcpy {
+                dst_addr,
+                src_addr,
+                count,
+                size,
+            } => write!(f, "__memcpy_{size}({dst_addr}, {src_addr}, {count})"),
         }
     }
 }
@@ -1488,7 +1501,92 @@ fn lower_stosd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         src: new_edi,
     });
 
-    // ECX = 0
+    ctx.emit(Instr::Assign {
+        dst: ecx,
+        src: Value::Imm(Imm::U32(0)),
+    });
+}
+
+fn lower_movsd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let esi = Value::Reg(Reg::Esi);
+    let edi = Value::Reg(Reg::Edi);
+
+    if !ins.has_rep_prefix() {
+        let tmp = ctx.new_temp(Size::U32);
+        ctx.emit(Instr::Load {
+            dst: tmp,
+            addr: esi.clone(),
+            space: MemSpace::Default,
+        });
+
+        ctx.emit(Instr::Store {
+            addr: edi.clone(),
+            src: tmp,
+            space: MemSpace::Default,
+        });
+
+        let new_esi = emit_bin(ctx, BinOp::Add, esi.clone(), Value::Imm(Imm::U32(4)));
+        ctx.emit(Instr::Assign {
+            dst: esi,
+            src: new_esi,
+        });
+
+        let new_edi = emit_bin(ctx, BinOp::Add, edi.clone(), Value::Imm(Imm::U32(4)));
+        ctx.emit(Instr::Assign {
+            dst: edi,
+            src: new_edi,
+        });
+
+        return;
+    }
+
+    // ----------------------------
+    // REP MOVSD → Memcpy
+    // ----------------------------
+    let ecx = Value::Reg(Reg::Ecx);
+
+    ctx.emit(Instr::Memcpy {
+        dst_addr: edi.clone(),
+        src_addr: esi.clone(),
+        count: ecx.clone(),
+        size: Size::U32,
+    });
+
+    let byte_count = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Mul,
+        dst: byte_count,
+        lhs: ecx.clone(),
+        rhs: Value::Imm(Imm::U32(4)),
+        flags: FlagxGroup::NONE,
+    });
+
+    let new_edi = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Add,
+        dst: new_edi,
+        lhs: edi.clone(),
+        rhs: byte_count,
+        flags: FlagxGroup::NONE,
+    });
+    ctx.emit(Instr::Assign {
+        dst: edi,
+        src: new_edi,
+    });
+
+    let new_esi = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Add,
+        dst: new_esi,
+        lhs: esi.clone(),
+        rhs: byte_count,
+        flags: FlagxGroup::NONE,
+    });
+    ctx.emit(Instr::Assign {
+        dst: esi,
+        src: new_esi,
+    });
+
     ctx.emit(Instr::Assign {
         dst: ecx,
         src: Value::Imm(Imm::U32(0)),
@@ -1648,6 +1746,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes),
 
         Mnemonic::Stosd => lower_stosd(ctx, ins),
+        Mnemonic::Movsd => lower_movsd(ctx, ins),
 
         Mnemonic::Nop => ctx.emit(Instr::Nop),
 
