@@ -17,18 +17,18 @@ pub enum Reg {
     St(u8),
 }
 impl Reg {
-    fn size(&self) -> Option<Size> {
+    fn size(&self) -> Size {
         match self {
-            Reg::Eax => Some(Size::U32),
-            Reg::Ebx => Some(Size::U32),
-            Reg::Ecx => Some(Size::U32),
-            Reg::Edx => Some(Size::U32),
-            Reg::Esi => Some(Size::U32),
-            Reg::Edi => Some(Size::U32),
-            Reg::Ebp => Some(Size::U32),
-            Reg::Esp => Some(Size::U32),
-            Reg::Eip => Some(Size::U32),
-            Reg::St(_) => Some(Size::F64),
+            Reg::Eax => Size::U32,
+            Reg::Ebx => Size::U32,
+            Reg::Ecx => Size::U32,
+            Reg::Edx => Size::U32,
+            Reg::Esi => Size::U32,
+            Reg::Edi => Size::U32,
+            Reg::Ebp => Size::U32,
+            Reg::Esp => Size::U32,
+            Reg::Eip => Size::U32,
+            Reg::St(_) => Size::F64,
         }
     }
 }
@@ -205,12 +205,12 @@ impl Imm {
         }
     }
 
-    fn size(&self) -> Option<Size> {
-        Some(match self {
+    fn size(&self) -> Size {
+        match self {
             Imm::U8(_) => Size::U8,
             Imm::U16(_) => Size::U16,
             Imm::U32(_) => Size::U32,
-        })
+        }
     }
 }
 
@@ -325,12 +325,12 @@ impl std::fmt::Display for Value {
 }
 
 impl Value {
-    pub fn size(&self) -> Option<Size> {
+    pub fn size(&self) -> Size {
         match self {
             Value::Reg(reg) => reg.size(),
             Value::Imm(imm) => imm.size(),
-            Value::Temp(temp) => Some(temp.size),
-            Value::Flag(_) => Some(Size::U1),
+            Value::Temp(temp) => temp.size,
+            Value::Flag(_) => Size::U1,
         }
     }
 }
@@ -472,7 +472,7 @@ impl std::fmt::Display for Instr {
             }
             Self::Assign { dst, src } => write!(f, "{dst} = {src}"),
             Self::Load { dst, addr, space } => {
-                let size = dst.size().unwrap();
+                let size = dst.size();
                 write!(f, "{dst} = load {size} [{addr}]")?;
                 if *space == MemSpace::Fs {
                     write!(f, " [fs]")?;
@@ -480,7 +480,7 @@ impl std::fmt::Display for Instr {
                 Ok(())
             }
             Self::Store { addr, src, space } => {
-                let size = src.size().unwrap();
+                let size = src.size();
                 write!(f, "[{addr}] <- store {size} {src}")?;
                 if *space == MemSpace::Fs {
                     write!(f, " [fs]")?;
@@ -492,7 +492,7 @@ impl std::fmt::Display for Instr {
             }
             Self::Not { dst, src } => write!(f, "{dst} = not {src}"),
             Self::SliceBytes { dst, src, start } => {
-                let end = u32::from(*start) + dst.size().unwrap().to_bytes().unwrap();
+                let end = u32::from(*start) + dst.size().to_bytes().unwrap();
 
                 write!(f, "{dst} = slice {src}[{start}..{end}]")
             }
@@ -502,12 +502,12 @@ impl std::fmt::Display for Instr {
                 value,
                 start,
             } => {
-                let end = u32::from(*start) + value.size().unwrap().to_bytes().unwrap();
+                let end = u32::from(*start) + value.size().to_bytes().unwrap();
                 write!(f, "{dst} = slice {base}[{start}..{end}] set {value}")
             }
             Self::Convert { dst, src } => {
-                let src_size = src.size().unwrap();
-                let dst_size = dst.size().unwrap();
+                let src_size = src.size();
+                let dst_size = dst.size();
                 write!(f, "{dst} = {src_size}to{dst_size} {src}")
             }
             Self::Nop => write!(f, "nop"),
@@ -750,13 +750,13 @@ fn lower_memory(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Operand {
 fn lower_mov(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     lower_bin_operation(ctx, ins, |ctx, ins, lhs, rhs| match ins.mnemonic() {
         Mnemonic::Movzx => {
-            let target_size = lhs.size().unwrap();
+            let target_size = lhs.size();
             let res = ctx.new_temp(target_size);
             ctx.emit(Instr::Convert { dst: res, src: rhs });
             res
         }
         Mnemonic::Movsx => {
-            let target_size = lhs.size().unwrap();
+            let target_size = lhs.size();
             let target_size_signed = target_size.to_signed().unwrap();
             let res_signed = ctx.new_temp(target_size_signed);
             let res = ctx.new_temp(target_size);
@@ -791,12 +791,12 @@ enum Operand {
 }
 
 impl Operand {
-    fn size(&self) -> Option<Size> {
+    fn size(&self) -> Size {
         match self {
             Operand::Reg(reg) => reg.size(),
-            Operand::SubReg { size, .. } => Some(*size),
+            Operand::SubReg { size, .. } => *size,
             Operand::Imm(imm) => imm.size(),
-            Operand::Memory { size, .. } => Some(*size),
+            Operand::Memory { size, .. } => *size,
         }
     }
 
@@ -847,7 +847,7 @@ impl Operand {
                 });
             }
             Operand::SubReg { reg, lo, size } => {
-                let value_size = value.size().unwrap();
+                let value_size = value.size();
                 assert_eq!(value_size, size);
 
                 let base = Value::Reg(reg);
@@ -987,7 +987,7 @@ fn lower_push(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         op: BinOp::Sub,
         dst: new_esp,
         lhs: esp.clone(),
-        rhs: Value::Imm(Imm::U32(value.size().unwrap().to_bytes().unwrap())),
+        rhs: Value::Imm(Imm::U32(value.size().to_bytes().unwrap())),
         flags: FlagxGroup::NONE,
     });
 
@@ -1007,7 +1007,7 @@ fn lower_pop(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let dst = lower_operand(ctx, ins, 0);
 
     let size = match &dst {
-        Operand::Reg(r) => r.size().unwrap(),
+        Operand::Reg(r) => r.size(),
         Operand::SubReg { size, .. } => *size,
         Operand::Memory { size, .. } => *size,
         Operand::Imm(_) => unreachable!(),
@@ -1052,8 +1052,8 @@ fn lower_call(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 }
 
 fn bin_size(lhs: &Value, rhs: &Value) -> Size {
-    let lhs = lhs.size().unwrap();
-    let rhs = rhs.size().unwrap();
+    let lhs = lhs.size();
+    let rhs = rhs.size();
     if lhs == rhs {
         lhs
     } else {
@@ -1092,7 +1092,7 @@ fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
 fn lower_mul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let rhs_op = lower_operand(ctx, ins, 0);
     let rhs = rhs_op.lower_load(ctx);
-    let size = rhs.size().unwrap();
+    let size = rhs.size();
 
     let (eax_op, edx_op) = match size {
         Size::U8 => (
@@ -1187,8 +1187,8 @@ fn lower_imul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         x => panic!("unknown op count {x} for {ins} at {}", ctx.addr),
     };
 
-    let lhs_signed_size = lhs.size().unwrap().to_signed().unwrap();
-    let rhs_signed_size = rhs.size().unwrap().to_signed().unwrap();
+    let lhs_signed_size = lhs.size().to_signed().unwrap();
+    let rhs_signed_size = rhs.size().to_signed().unwrap();
 
     let lhs_val = lhs.lower_load(ctx);
     let lhs_val = emit_convert(ctx, lhs_val, lhs_signed_size);
@@ -1204,7 +1204,7 @@ fn lower_imul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         FlagxGroup::CARRY_OVERFOW,
     );
 
-    let dst_size = dst.size().unwrap();
+    let dst_size = dst.size();
     let result = emit_convert(ctx, result, dst_size);
     dst.lower_store(ctx, result);
 }
@@ -1215,7 +1215,7 @@ fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
     let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
 
     // Mask shift count: x86 masks by 0x1F for 32-bit operands
-    let rhs_size = rhs.size().unwrap();
+    let rhs_size = rhs.size();
     let masked_count = emit_bin(
         ctx,
         BinOp::BitAnd,
@@ -1288,7 +1288,7 @@ fn lower_fstp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         flags: FlagxGroup::X87_C1,
     });
 
-    let size = dest.size().unwrap();
+    let size = dest.size();
     let value = emit_convert(ctx, value, size);
     dest.lower_store(ctx, value);
 }
@@ -1419,7 +1419,7 @@ fn lower_lea(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 fn lower_inc_dec(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let operand = lower_operand(ctx, ins, 0);
     let lhs = operand.lower_load(ctx);
-    let size = lhs.size().unwrap();
+    let size = lhs.size();
     let imm = Imm::new_u(1, size).unwrap();
 
     let op = if ins.mnemonic() == Mnemonic::Inc {
@@ -1435,7 +1435,7 @@ fn lower_inc_dec(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 fn lower_neg(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let operand = lower_operand(ctx, ins, 0);
     let value = operand.lower_load(ctx);
-    let size = value.size().unwrap();
+    let size = value.size();
 
     let lhs = Value::Imm(Imm::new_u(0, size).unwrap());
     let new = emit_bin_with_flags(ctx, BinOp::Sub, lhs, value, FlagxGroup::ALL);
@@ -1446,7 +1446,7 @@ fn lower_neg(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 fn lower_not(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let operand = lower_operand(ctx, ins, 0);
     let value = operand.lower_load(ctx);
-    let size = value.size().unwrap();
+    let size = value.size();
 
     let res = ctx.new_temp(size);
     ctx.emit(Instr::Not { dst: res, src: res });
@@ -1830,8 +1830,8 @@ fn emit_bin_with_flags(
     rhs: Value,
     flags: FlagxGroup,
 ) -> Value {
-    let lhs_size = lhs.size().unwrap();
-    let rhs_size = rhs.size().unwrap();
+    let lhs_size = lhs.size();
+    let rhs_size = rhs.size();
     if lhs_size != rhs_size {
         panic!(
             "mismtach of binary operation sizes: {lhs_size} != {rhs_size}, for {lhs} {op} {rhs} at {}",
@@ -1849,7 +1849,7 @@ fn emit_bin_with_flags_unchecked_size(
     rhs: Value,
     flags: FlagxGroup,
 ) -> Value {
-    let lhs_size = lhs.size().unwrap();
+    let lhs_size = lhs.size();
     let res = ctx.new_temp(lhs_size);
     ctx.emit(Instr::BinOp {
         op,
@@ -1863,7 +1863,7 @@ fn emit_bin_with_flags_unchecked_size(
 
 fn emit_convert(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
     let last_size = value.size();
-    if last_size == Some(size) {
+    if last_size == size {
         value
     } else {
         let res = ctx.new_temp(size);
