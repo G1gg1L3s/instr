@@ -13,10 +13,23 @@ pub enum Reg {
     Ebp,
     Esp,
     Eip,
+
+    St(u8),
 }
 impl Reg {
     fn size(&self) -> Option<Size> {
-        Some(Size::U32)
+        match self {
+            Reg::Eax => Some(Size::U32),
+            Reg::Ebx => Some(Size::U32),
+            Reg::Ecx => Some(Size::U32),
+            Reg::Edx => Some(Size::U32),
+            Reg::Esi => Some(Size::U32),
+            Reg::Edi => Some(Size::U32),
+            Reg::Ebp => Some(Size::U32),
+            Reg::Esp => Some(Size::U32),
+            Reg::Eip => Some(Size::U32),
+            Reg::St(_) => Some(Size::F64),
+        }
     }
 }
 
@@ -158,6 +171,7 @@ impl std::fmt::Display for Reg {
             Reg::Ebp => write!(f, "ebp"),
             Reg::Esp => write!(f, "esp"),
             Reg::Eip => write!(f, "eip"),
+            Reg::St(i) => write!(f, "st({i})"),
         }
     }
 }
@@ -1093,6 +1107,20 @@ fn lower_fstp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     dest.lower_store(ctx, value);
 }
 
+fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
+    if ins.op_count() != 1 {
+        panic!("unkown operands: {ins} at {}", Addr(ins.ip32()));
+    }
+
+    let rhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+    let st0 = Value::Reg(Reg::St(0));
+    let result = emit_bin_with_flags(ctx, op, st0, rhs, FlagxGroup::X87_C1);
+    ctx.emit(Instr::Assign {
+        dst: st0,
+        src: result,
+    });
+}
+
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
@@ -1482,6 +1510,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
 
         Mnemonic::Fild => lower_fild(ctx, ins),
         Mnemonic::Fstp => lower_fstp(ctx, ins),
+        Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add),
+
         Mnemonic::Nop => ctx.emit(Instr::Nop),
 
         _ => {
