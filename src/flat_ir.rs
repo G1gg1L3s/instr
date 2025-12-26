@@ -416,6 +416,12 @@ pub enum Instr {
         dst: Option<Value>,
         flags: FlagxGroup,
     },
+
+    Memset {
+        addr: Value,
+        value: Value,
+        count: Value,
+    },
 }
 
 impl std::fmt::Display for Instr {
@@ -496,6 +502,7 @@ impl std::fmt::Display for Instr {
 
                 write!(f, "x87.pop")
             }
+            Self::Memset { addr, value, count } => write!(f, "__memset({addr}, {value}, {count})"),
         }
     }
 }
@@ -1424,6 +1431,70 @@ fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
+fn lower_stosd(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    if !ins.has_rep_prefix() {
+        // Fallback: single store
+        let edi = Value::Reg(Reg::Edi);
+        let eax = Value::Reg(Reg::Eax);
+
+        ctx.emit(Instr::Store {
+            addr: edi.clone(),
+            src: eax,
+            space: MemSpace::Default,
+        });
+
+        let new_edi = emit_bin(ctx, BinOp::Add, edi, Value::Imm(Imm::U32(4)));
+        ctx.emit(Instr::Assign {
+            dst: edi,
+            src: new_edi,
+        });
+        return;
+    }
+
+    // === REP STOSD → Memset ===
+
+    let edi = Value::Reg(Reg::Edi);
+    let eax = Value::Reg(Reg::Eax);
+    let ecx = Value::Reg(Reg::Ecx);
+
+    // count_bytes = ECX * 4
+    let count_bytes = ctx.new_temp(Size::U32);
+
+    ctx.emit(Instr::Memset {
+        addr: edi.clone(),
+        value: eax,
+        count: ecx,
+    });
+
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Mul,
+        dst: count_bytes,
+        lhs: ecx.clone(),
+        rhs: Value::Imm(Imm::U32(4)),
+        flags: FlagxGroup::NONE,
+    });
+
+    // EDI += ECX * 4
+    let new_edi = ctx.new_temp(Size::U32);
+    ctx.emit(Instr::BinOp {
+        op: BinOp::Add,
+        dst: new_edi,
+        lhs: edi.clone(),
+        rhs: count_bytes,
+        flags: FlagxGroup::NONE,
+    });
+    ctx.emit(Instr::Assign {
+        dst: edi,
+        src: new_edi,
+    });
+
+    // ECX = 0
+    ctx.emit(Instr::Assign {
+        dst: ecx,
+        src: Value::Imm(Imm::U32(0)),
+    });
+}
+
 fn emit_not(ctx: &mut LowerCtx, src: Value) -> Value {
     let res = ctx.new_temp(Size::U1);
     ctx.emit(Instr::Not { dst: res, src });
@@ -1575,6 +1646,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add, Fpop::No),
         Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mul, Fpop::No),
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes),
+
+        Mnemonic::Stosd => lower_stosd(ctx, ins),
 
         Mnemonic::Nop => ctx.emit(Instr::Nop),
 
