@@ -64,6 +64,7 @@ impl std::fmt::Display for FlagxGroup {
         match *self {
             x if x == Self::ALL => write!(f, "f:*"),
             x if x == Self::NOCARRY => write!(f, "f:!c"),
+            x if x == Self::CARRY_OVERFOW => write!(f, "f:co"),
             x if x == Self::X87_C1 => write!(f, "f:c1"),
             _ => {
                 write!(f, "f:")?;
@@ -88,6 +89,7 @@ impl FlagxGroup {
     );
 
     pub const NOCARRY: Self = Self(Self::ALL.0.difference(Flagx::CARRY));
+    pub const CARRY_OVERFOW: Self = Self(Flagx::CARRY.union(Flagx::OVERFLOW));
 
     pub const X87_C1: Self = Self(Flagx::C1);
 
@@ -192,7 +194,7 @@ impl Imm {
             Size::U16 => Some(Self::U16(val.into())),
             Size::U32 => Some(Self::U32(val.into())),
 
-            Size::U1 | Size::I8 | Size::I16 | Size::I32 | Size::F32 | Size::F64 => None,
+            Size::U1 | Size::I8 | Size::I16 | Size::I32 | Size::F32 | Size::F64 | Size::U64 => None,
         }
     }
 
@@ -221,6 +223,7 @@ pub enum Size {
     U8,
     U16,
     U32,
+    U64,
 
     I8,
     I16,
@@ -237,6 +240,7 @@ impl Size {
             Size::U8 => Some(1),
             Size::U16 => Some(2),
             Size::U32 => Some(4),
+            Size::U64 => Some(8),
 
             Size::I8 => Some(1),
             Size::I16 => Some(2),
@@ -256,6 +260,7 @@ impl std::fmt::Display for Size {
             Size::U8 => write!(f, "u8"),
             Size::U16 => write!(f, "u16"),
             Size::U32 => write!(f, "u32"),
+            Size::U64 => write!(f, "u64"),
 
             Size::I8 => write!(f, "u8"),
             Size::I16 => write!(f, "u16"),
@@ -1056,6 +1061,88 @@ fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
     });
 }
 
+fn lower_mul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let rhs_op = lower_operand(ctx, ins, 0);
+    let rhs = rhs_op.lower_load(ctx);
+    let size = rhs.size().unwrap();
+
+    let (eax_op, edx_op) = match size {
+        Size::U8 => (
+            Operand::SubReg {
+                reg: Reg::Eax,
+                lo: 0,
+                size: Size::U8,
+            },
+            Operand::SubReg {
+                reg: Reg::Edx,
+                lo: 0,
+                size: Size::U8,
+            },
+        ),
+        Size::U16 => (
+            Operand::SubReg {
+                reg: Reg::Eax,
+                lo: 0,
+                size: Size::U16,
+            },
+            Operand::SubReg {
+                reg: Reg::Edx,
+                lo: 0,
+                size: Size::U16,
+            },
+        ),
+        Size::U32 => (Operand::Reg(Reg::Eax), Operand::Reg(Reg::Edx)),
+        _ => unreachable!(),
+    };
+
+    let lhs = eax_op.lower_load(ctx);
+    let wide = match size {
+        Size::U8 => Size::U16,
+        Size::U16 => Size::U32,
+        Size::U32 => Size::U64,
+        _ => unreachable!(),
+    };
+    let lhs_wide = emit_convert(ctx, lhs, wide);
+    let rhs_wide = emit_convert(ctx, rhs, wide);
+
+    let full = emit_bin_with_flags(
+        ctx,
+        BinOp::Mul,
+        lhs_wide,
+        rhs_wide,
+        FlagxGroup::CARRY_OVERFOW,
+    );
+
+    // Low / high parts
+    let low = ctx.new_temp(size);
+    ctx.emit(Instr::SliceBytes {
+        dst: low,
+        src: full,
+        start: 0,
+    });
+
+    let high = ctx.new_temp(size);
+    ctx.emit(Instr::SliceBytes {
+        dst: high,
+        src: full,
+        start: size.to_bytes().unwrap() as u8,
+    });
+
+    match size {
+        Size::U8 => {
+            // AX := AL ∗ SRC;
+            eax_op.lower_store(ctx, low);
+        }
+        Size::U32 | Size::U16 => {
+            // DX:AX := AX ∗ SRC;
+            // EDX:EAX := EAX ∗ SRC
+            edx_op.lower_store(ctx, high);
+            eax_op.lower_store(ctx, low);
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
     let dst_operand = lower_operand(ctx, ins, 0);
     let lhs = dst_operand.lower_load(ctx);
@@ -1787,10 +1874,12 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Add => lower_bin_set_flags(ctx, ins, BinOp::Add),
         Mnemonic::Sub => lower_bin_set_flags(ctx, ins, BinOp::Sub),
         Mnemonic::Sbb => lower_sbb(ctx, ins),
-
+        
         Mnemonic::Or => lower_binary_bit_op(ctx, ins, BinOp::BitOr),
         Mnemonic::And => lower_binary_bit_op(ctx, ins, BinOp::BitAnd),
         Mnemonic::Xor => lower_binary_bit_op(ctx, ins, BinOp::Xor),
+
+        Mnemonic::Mul => lower_mul(ctx, ins),
 
         Mnemonic::Shl => lower_shift(ctx, ins, BinOp::ShiftLeft),
         Mnemonic::Shr => lower_shift(ctx, ins, BinOp::ShifRight),
