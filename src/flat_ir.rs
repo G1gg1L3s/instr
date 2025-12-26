@@ -53,6 +53,8 @@ bitflags::bitflags! {
         const C1     =   1 << 6;
         // X87 C2
         const C2     =   1 << 7;
+        // X87 C3
+        const C3     =   1 << 8;
     }
 }
 
@@ -66,6 +68,7 @@ impl std::fmt::Display for FlagxGroup {
             x if x == Self::NOCARRY => write!(f, "f:!c"),
             x if x == Self::CARRY_OVERFOW => write!(f, "f:co"),
             x if x == Self::X87_C1 => write!(f, "f:c1"),
+            x if x == Self::X87_COM => write!(f, "f:x87com"),
             _ => {
                 write!(f, "f:")?;
                 for flag in self.0 {
@@ -92,6 +95,7 @@ impl FlagxGroup {
     pub const CARRY_OVERFOW: Self = Self(Flagx::CARRY.union(Flagx::OVERFLOW));
 
     pub const X87_C1: Self = Self(Flagx::C1);
+    pub const X87_COM: Self = Self(Flagx::C0.union(Flagx::C1).union(Flagx::C2).union(Flagx::C3));
 
     pub fn is_empty(self) -> bool {
         self.0.is_empty()
@@ -1376,6 +1380,34 @@ fn lower_fxch(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
+fn lower_fcom(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let rhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+    let rhs = emit_convert(ctx, rhs, Size::F64);
+    let lhs = Value::Reg(Reg::St(0));
+
+    emit_bin_with_flags(ctx, BinOp::Sub, lhs, rhs, FlagxGroup::X87_COM);
+
+    match ins.mnemonic() {
+        Mnemonic::Fcomp => {
+            ctx.emit(Instr::X87Pop {
+                dst: None,
+                flags: FlagxGroup::NONE,
+            });
+        }
+        Mnemonic::Fcompp => {
+            ctx.emit(Instr::X87Pop {
+                dst: None,
+                flags: FlagxGroup::NONE,
+            });
+            ctx.emit(Instr::X87Pop {
+                dst: None,
+                flags: FlagxGroup::NONE,
+            });
+        }
+        _ => {}
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
@@ -2018,6 +2050,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Fdivr => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::Yes),
 
         Mnemonic::Fxch => lower_fxch(ctx, ins),
+        Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp => lower_fcom(ctx, ins),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
