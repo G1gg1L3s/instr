@@ -1276,7 +1276,7 @@ fn lower_sete_setne(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     lhs.lower_store(ctx, tmp);
 }
 
-fn lower_fild(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+fn lower_fld(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let value = lower_operand(ctx, ins, 0).lower_load(ctx);
     let value = emit_convert(ctx, value, Size::F64);
     ctx.emit(Instr::X87Push {
@@ -2007,7 +2007,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
 
         Mnemonic::Sete | Mnemonic::Setne => lower_sete_setne(ctx, ins),
 
-        Mnemonic::Fild => lower_fild(ctx, ins),
+        Mnemonic::Fld | Mnemonic::Fild => lower_fld(ctx, ins),
 
         Mnemonic::Fst => lower_fst(ctx, ins, Fpop::No),
         Mnemonic::Fstp => lower_fst(ctx, ins, Fpop::Yes),
