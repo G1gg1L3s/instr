@@ -1285,14 +1285,19 @@ fn lower_fild(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     })
 }
 
-fn lower_fstp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+fn lower_fst(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, fpop: Fpop) {
     let dest = lower_operand(ctx, ins, 0);
 
-    let value = ctx.new_temp(Size::F64);
-    ctx.emit(Instr::X87Pop {
-        dst: Some(value),
-        flags: FlagxGroup::X87_C1,
-    });
+    let value = if let Fpop::Yes = fpop {
+        let value = ctx.new_temp(Size::F64);
+        ctx.emit(Instr::X87Pop {
+            dst: Some(value),
+            flags: FlagxGroup::X87_C1,
+        });
+        value
+    } else {
+        Value::Reg(Reg::St(0))
+    };
 
     let size = dest.size();
     let value = emit_convert(ctx, value, size);
@@ -1981,7 +1986,10 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Sete | Mnemonic::Setne => lower_sete_setne(ctx, ins),
 
         Mnemonic::Fild => lower_fild(ctx, ins),
-        Mnemonic::Fstp => lower_fstp(ctx, ins),
+
+        Mnemonic::Fst => lower_fst(ctx, ins, Fpop::No),
+        Mnemonic::Fstp => lower_fst(ctx, ins, Fpop::Yes),
+
         Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add, Fpop::No, FRev::No),
         Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mulu, Fpop::No, FRev::No),
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes, FRev::No),
