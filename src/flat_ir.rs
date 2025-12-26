@@ -1813,7 +1813,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
-        Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd   => lower_movs(ctx, ins),
+        Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
 
         Mnemonic::Nop => ctx.emit(Instr::Nop),
 

@@ -1,4 +1,3 @@
-
 use crate::{
     Binary,
     addr::Addr,
@@ -111,7 +110,6 @@ pub fn cut_blocks_as_sausage(binary: &Binary<'_>) -> Vec<Block> {
     let jump_tables = process_jump_tables(binary, &mut to_process);
     to_process.push((binary.entry_point, ToProcessType::Entry));
 
-    
     process_blocks(binary, blocks, jump_tables, to_process)
 }
 

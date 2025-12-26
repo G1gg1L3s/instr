@@ -130,14 +130,18 @@ impl BlockSet {
         let end = start + u32::try_from(size).unwrap();
 
         if let Some(block) = self.covering_block(start)
-            && block.contains(start) && block.addr() != start {
-                self.split_at(start);
-            }
+            && block.contains(start)
+            && block.addr() != start
+        {
+            self.split_at(start);
+        }
 
         if let Some(block) = self.covering_block(end)
-            && block.contains(end) && block.addr() != end {
-                self.split_at(end);
-            }
+            && block.contains(end)
+            && block.addr() != end
+        {
+            self.split_at(end);
+        }
     }
 }
 
