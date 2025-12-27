@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::{
     SectionData,
@@ -16,11 +16,9 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
         if blocks.contains_key(&addr) {
             continue;
         }
-        println!(">> Processing {addr}");
 
         if let Some((&overlapping, block)) = blocks.range(..=addr).next_back() {
             if block.contains(addr) {
-                println!("    >> Addr {addr} overlaps block {overlapping}, removign block...");
                 blocks.remove(&overlapping);
                 to_visit.push(overlapping);
             }
@@ -32,8 +30,6 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
         } else {
             text.slice_to_end(addr)
         };
-
-        println!("    >> Size of {addr}: {}", code.len());
 
         let block = flat_ir::lower_block(code, addr);
 
@@ -79,4 +75,105 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
     }
 
     blocks
+}
+
+pub struct Function {
+    addr: Addr,
+    blocks: Vec<Addr>,
+    exits: Vec<Addr>,
+}
+
+impl Function {
+    pub fn addr(&self) -> Addr {
+        self.addr
+    }
+
+    pub fn blocks(&self) -> &[Addr] {
+        &self.blocks
+    }
+}
+
+pub fn derive_functions(blocks: &BTreeMap<Addr, Block>, entry: Addr) -> Vec<Function> {
+    let mut entries = collect_entries(blocks.values());
+    entries.insert(entry);
+
+    let mut funcs = Vec::with_capacity(entries.len());
+    for addr in &entries {
+        let func = derive_func(blocks, &entries, *addr);
+        funcs.push(func);
+    }
+
+    funcs.sort_unstable_by(|a, b| a.addr.cmp(&b.addr));
+
+    funcs
+}
+
+fn derive_func(blocks: &BTreeMap<Addr, Block>, entries: &HashSet<Addr>, start: Addr) -> Function {
+    let mut func_blocks = BTreeSet::new();
+    let mut exits = BTreeSet::new();
+
+    let mut worklist = vec![start];
+    let mut visited = HashSet::new();
+
+    while let Some(addr) = worklist.pop() {
+        let new = visited.insert(addr);
+
+        if !new {
+            continue;
+        }
+
+        if entries.contains(&addr) && addr != start {
+            continue;
+        }
+
+        func_blocks.insert(addr);
+        let block = &blocks[&addr];
+
+        match block.terminator {
+            flat_ir::Terminator::Cond {
+                then_bb, else_bb, ..
+            } => {
+                if let Value::Imm(Imm::U32(u32)) = then_bb {
+                    worklist.push(Addr(u32));
+                }
+                if let Value::Imm(Imm::U32(u32)) = else_bb {
+                    worklist.push(Addr(u32));
+                }
+            }
+            flat_ir::Terminator::Jump { target, .. } => {
+                if let Value::Imm(Imm::U32(u32)) = target {
+                    worklist.push(Addr(u32));
+                }
+            }
+            flat_ir::Terminator::Ret { .. } => {
+                exits.insert(block.addr);
+            }
+            flat_ir::Terminator::Fallthrough { next } => {
+                worklist.push(next);
+            }
+        }
+    }
+
+    Function {
+        addr: start,
+        blocks: func_blocks.into_iter().collect(),
+        exits: exits.into_iter().collect(),
+    }
+}
+
+fn collect_entries<'a>(blocks: impl Iterator<Item = &'a Block>) -> HashSet<Addr> {
+    let mut set = HashSet::new();
+
+    for block in blocks {
+        for ins in &block.instr {
+            if let flat_ir::Instr::Call {
+                target: Value::Imm(Imm::U32(addr)),
+            } = &ins.ins
+            {
+                set.insert(Addr(*addr));
+            }
+        }
+    }
+
+    set
 }

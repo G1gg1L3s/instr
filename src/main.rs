@@ -93,8 +93,23 @@ fn main() {
 
     let blocks = third_cfg::walk_code_blocks(binary.sections.text, binary.entry_point);
 
-    // let funcs_from_start = new_cfg::walk_code_blocks(&db, binary.sections.text, binary.entry_point);
-    // new_cfg::derive_functions(&db, &funcs_from_start.values().cloned().collect::<Vec<_>>());
+    let functions = third_cfg::derive_functions(&blocks, binary.entry_point);
+
+    println!(".funcs: # Detected {} functions", functions.len());
+    for func in functions {
+        println!(
+            "------------------------------ func_{} ------------------------------",
+            func.addr()
+        );
+
+        for block in func.blocks().iter() {
+            let block = blocks.get(block).unwrap();
+            let code = binary.sections.text.slice(block.addr, block.len());
+
+            println!("_block_{}:", block.addr);
+            println!("{}", block.asm_fmt(code));
+        }
+    }
 
     println!(".text:");
 
