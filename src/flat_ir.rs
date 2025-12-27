@@ -732,6 +732,7 @@ fn memory_size_to_size(memory_size: iced_x86::MemorySize) -> Option<Size> {
         iced_x86::MemorySize::Int8 => Some(Size::I8),
         iced_x86::MemorySize::Int16 => Some(Size::I16),
         iced_x86::MemorySize::Int32 => Some(Size::I32),
+        iced_x86::MemorySize::Int64 => Some(Size::I64),
 
         iced_x86::MemorySize::Float32 => Some(Size::F32),
         iced_x86::MemorySize::Float64 => Some(Size::F64),
