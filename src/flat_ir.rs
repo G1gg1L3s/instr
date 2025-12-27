@@ -762,7 +762,10 @@ fn lower_memory(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Operand {
 }
 
 fn lower_mov(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    lower_bin_operation(ctx, ins, |ctx, ins, lhs, rhs| match ins.mnemonic() {
+    let lhs = lower_operand(ctx, ins, 0);
+    let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
+
+    let rhs = match ins.mnemonic() {
         Mnemonic::Movzx => {
             let target_size = lhs.size();
             let res = ctx.new_temp(target_size);
@@ -785,7 +788,9 @@ fn lower_mov(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
             res
         }
         _ => rhs,
-    });
+    };
+
+    lhs.lower_store(ctx, rhs);
 }
 
 #[derive(Debug, Clone, Copy)]
