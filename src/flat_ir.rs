@@ -1426,14 +1426,17 @@ fn lower_fnstsw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
+        addr: Addr,
         cond: Condition,
         then_bb: Value,
         else_bb: Value,
     },
     Jump {
+        addr: Addr,
         target: Value,
     },
     Ret {
+        addr: Addr,
         stack_adjust: u16,
     },
     Fallthrough {
@@ -1448,10 +1451,22 @@ impl std::fmt::Display for Terminator {
                 cond,
                 then_bb,
                 else_bb,
+                ..
             } => write!(f, "if {cond} then {then_bb} else {else_bb}"),
-            Self::Jump { target } => write!(f, "jump {target}"),
-            Self::Ret { stack_adjust } => write!(f, "ret {stack_adjust}"),
-            Self::Fallthrough { next } => write!(f, "fallthrough {next}"),
+            Self::Jump { target, .. } => write!(f, "jump {target}"),
+            Self::Ret { stack_adjust, .. } => write!(f, "ret {stack_adjust}"),
+            Self::Fallthrough { next, .. } => write!(f, "fallthrough {next}"),
+        }
+    }
+}
+
+impl Terminator {
+    pub fn addr(&self) -> Option<Addr> {
+        match self {
+            Terminator::Cond { addr, .. }
+            | Terminator::Jump { addr, .. }
+            | Terminator::Ret { addr, .. } => Some(*addr),
+            Terminator::Fallthrough { .. } => None,
         }
     }
 }
@@ -1494,6 +1509,7 @@ fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     };
 
     Terminator::Cond {
+        addr: Addr(ins.ip32()),
         cond,
         then_bb: target,
         else_bb: Value::Imm(Imm::U32(ins.next_ip32())),
@@ -1502,7 +1518,10 @@ fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
 
 fn lower_jmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     let target = lower_operand(ctx, ins, 0).lower_load(ctx);
-    Terminator::Jump { target }
+    Terminator::Jump {
+        target,
+        addr: Addr(ins.ip32()),
+    }
 }
 
 fn lower_lea(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
@@ -1978,7 +1997,7 @@ fn emit_convert(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
 pub struct Block {
     pub addr: Addr,
     pub instr: Vec<AnnotatedInstr>,
-    pub terminator: AnnotatedTerminator,
+    pub terminator: Terminator,
     pub size: u32,
 }
 
@@ -1995,13 +2014,22 @@ impl std::fmt::Display for Block {
         }
 
         let Some(last) = self.instr.last() else {
-            writeln!(f, "{}: {}", self.terminator.addr, self.terminator.inner)?;
+            if let Some(addr) = self.terminator.addr() {
+                writeln!(f, "{}: {}", addr, self.terminator)?;
+            } else {
+                writeln!(f, "        : {}", self.terminator)?;
+            }
+
             return Ok(());
         };
-        if last.addr == self.terminator.addr {
-            writeln!(f, "          {}", self.terminator.inner)?;
+        if Some(last.addr) == self.terminator.addr() {
+            writeln!(f, "          {}", self.terminator)?;
         } else {
-            writeln!(f, "{}: {}", self.terminator.addr, self.terminator.inner)?;
+            if let Some(addr) = self.terminator.addr() {
+                writeln!(f, "{}: {}", addr, self.terminator)?;
+            } else {
+                writeln!(f, "        : {}", self.terminator)?;
+            }
         }
 
         Ok(())
@@ -2055,26 +2083,33 @@ impl<'a> std::fmt::Display for AsmBlockFmt<'a> {
             }
         }
 
-        let Some(last) = self.block.instr.last() else {
-            writeln!(
-                f,
-                "    {}: {:32} | {}",
-                self.block.terminator.addr, " ", self.block.terminator.inner
-            )?;
+        let last_ins = self.block.instr.last();
+        let terminator_addr = self.block.terminator.addr();
 
-            return Ok(());
-        };
-        if last.addr == self.block.terminator.addr {
-            writeln!(f, "    {:42 } | {}", " ", self.block.terminator.inner)?;
-        } else {
-            let asm_ins = decoder.decode();
-            let asm_ins = asm_ins.to_string();
+        match (last_ins, terminator_addr) {
+            (None, Some(addr)) => {
+                writeln!(f, "    {}: {:32} | {}", addr, " ", self.block.terminator)?;
+            }
+            (Some(ins), None) => {
+                writeln!(f, "    {:42 } | {}", " ", self.block.terminator)?;
+            }
+            (None, None) => {
+                writeln!(f, "              | <empty>")?;
+            }
+            (Some(ins), Some(term)) if ins.addr == term => {
+                writeln!(f, "    {:42 } | {}", " ", self.block.terminator)?;
+            }
+            (Some(ins), Some(term)) => {
+                let asm_ins = decoder.decode();
+                assert_eq!(Addr(asm_ins.ip32()), term);
+                let asm_ins = asm_ins.to_string();
 
-            writeln!(
-                f,
-                "    {}: {:32} | {}",
-                self.block.terminator.addr, asm_ins, self.block.terminator.inner
-            )?;
+                writeln!(
+                    f,
+                    "    {}: {:32} | {}",
+                    term, asm_ins, self.block.terminator
+                )?;
+            }
         }
 
         Ok(())
@@ -2175,6 +2210,7 @@ fn lower_ret(_ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     };
 
     Terminator::Ret {
+        addr: Addr(ins.ip32()),
         stack_adjust: adjust,
     }
 }
@@ -2195,25 +2231,18 @@ pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
             return Block {
                 addr: block_addr,
                 instr: ctx.instrs,
-                terminator: AnnotatedTerminator {
-                    addr: Addr(ins.ip32()),
-                    inner: terminator,
-                },
+                terminator,
                 size,
             };
         }
     }
 
-    let terminator = AnnotatedTerminator {
-        addr: Addr(0),
-        inner: Terminator::Fallthrough {
-            next: Addr(decoder.ip() as _),
-        },
-    };
     Block {
         addr: block_addr,
         instr: ctx.instrs,
-        terminator,
+        terminator: Terminator::Fallthrough {
+            next: Addr(decoder.ip() as _),
+        },
         size: code.len() as _,
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     SectionData,
@@ -37,7 +37,7 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
 
         let block = flat_ir::lower_block(code, addr);
 
-        match block.terminator.inner {
+        match block.terminator {
             flat_ir::Terminator::Cond {
                 then_bb, else_bb, ..
             } => {
@@ -50,7 +50,7 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
                     block_starts.insert(Addr(u32));
                 }
             }
-            flat_ir::Terminator::Jump { target } => {
+            flat_ir::Terminator::Jump { target, .. } => {
                 if let Value::Imm(Imm::U32(u32)) = target {
                     to_visit.push(Addr(u32));
                     block_starts.insert(Addr(u32));
