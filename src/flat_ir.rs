@@ -227,9 +227,9 @@ impl Imm {
 impl std::fmt::Display for Imm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Imm::U8(x) => write!(f, "0x{:02x}", x),
-            Imm::U16(x) => write!(f, "0x{:04x}", x),
-            Imm::U32(x) => write!(f, "0x{:08x}", x),
+            Imm::U8(x) => write!(f, "0x{:x}", x),
+            Imm::U16(x) => write!(f, "0x{:x}", x),
+            Imm::U32(x) => write!(f, "0x{:x}", x),
         }
     }
 }
