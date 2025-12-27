@@ -91,36 +91,25 @@ fn main() {
         obj::fill_database_with_import(&mut db, lib);
     }
 
-    third_cfg::walk_code_blocks(binary.sections.text, binary.entry_point);
+    let blocks = third_cfg::walk_code_blocks(binary.sections.text, binary.entry_point);
 
-    let funcs_from_start = new_cfg::walk_code_blocks(&db, binary.sections.text, binary.entry_point);
-    new_cfg::derive_functions(&db, &funcs_from_start.values().cloned().collect::<Vec<_>>());
+    // let funcs_from_start = new_cfg::walk_code_blocks(&db, binary.sections.text, binary.entry_point);
+    // new_cfg::derive_functions(&db, &funcs_from_start.values().cloned().collect::<Vec<_>>());
 
     println!(".text:");
 
     let mut printer = PrinterOfSkipped::new(binary.sections.text);
-    for (func_addr, block) in funcs_from_start {
-        printer.print_skipped(func_addr);
+    for block in blocks.values() {
+        printer.print_skipped(block.addr);
 
-        if let new_cfg::Block::JumpTable(table) = block {
-            println!("_jump_table_{}", table.addr());
-            print_jump_table(&table);
-            printer.advance(table.addr(), table.len());
-            continue;
-        }
-
-        if func_addr == binary.entry_point {
+        if block.addr == binary.entry_point {
             println!("_start:");
-        } else if let new_cfg::Block::Code(code) = &block
-            && code.typ() == new_cfg::CodeBlockTyp::Entry
-        {
-            println!("_func_{}:", func_addr);
         } else {
-            println!("_block_{}:", func_addr);
+            println!("_block_{}:", block.addr);
         }
-        print_asm(&binary, &db, block.addr(), block.len(), None);
+        print_asm(&binary, &db, block.addr, block.len(), None);
         println!();
-        printer.advance(block.addr(), block.len());
+        printer.advance(block.addr, block.len());
     }
 
     println!(".rdata:");

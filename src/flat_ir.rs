@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use iced_x86::{Mnemonic, OpKind};
 
 use crate::addr::Addr;
@@ -1977,6 +1979,7 @@ pub struct Block {
     pub addr: Addr,
     pub instr: Vec<AnnotatedInstr>,
     pub terminator: AnnotatedTerminator,
+    pub size: u32,
 }
 
 impl std::fmt::Display for Block {
@@ -2002,6 +2005,21 @@ impl std::fmt::Display for Block {
         }
 
         Ok(())
+    }
+}
+
+impl Block {
+    pub fn len_u32(&self) -> u32 {
+        self.size
+    }
+
+    pub fn len(&self) -> usize {
+        self.size as _
+    }
+
+    pub fn contains(&self, addr: Addr) -> bool {
+        let end = self.addr + self.size;
+        (self.addr..end).contains(&addr)
     }
 }
 
@@ -2114,6 +2132,8 @@ pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
 
     for ins in &mut decoder {
         if let Some(terminator) = lower_ins(&mut ctx, &ins) {
+            let size: u32 = ins.next_ip32().checked_sub(block_addr.0).unwrap();
+
             return Block {
                 addr: block_addr,
                 instr: ctx.instrs,
@@ -2121,6 +2141,7 @@ pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
                     addr: Addr(ins.ip32()),
                     inner: terminator,
                 },
+                size,
             };
         }
     }
@@ -2135,5 +2156,6 @@ pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
         addr: block_addr,
         instr: ctx.instrs,
         terminator,
+        size: code.len() as _,
     }
 }
