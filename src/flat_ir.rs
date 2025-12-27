@@ -2021,6 +2021,64 @@ impl Block {
         let end = self.addr + self.size;
         (self.addr..end).contains(&addr)
     }
+
+    pub fn asm_fmt<'a>(&'a self, code: &'a [u8]) -> AsmBlockFmt<'a> {
+        AsmBlockFmt { block: self, code }
+    }
+}
+
+pub struct AsmBlockFmt<'a> {
+    block: &'a Block,
+    code: &'a [u8],
+}
+
+impl<'a> std::fmt::Display for AsmBlockFmt<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut decoder = iced_x86::Decoder::with_ip(
+            32,
+            self.code,
+            self.block.addr.0.into(),
+            iced_x86::DecoderOptions::NONE,
+        );
+
+        for chunk in self.block.instr.chunk_by(|a, b| a.addr == b.addr) {
+            let (head, tail) = chunk.split_first().unwrap();
+
+            let asm_ins = decoder.decode();
+            assert_eq!(head.addr, Addr(asm_ins.ip32()));
+            let asm_ins = asm_ins.to_string();
+
+            writeln!(f, "    {}: {:32} | {}", head.addr, asm_ins, head.ins)?;
+
+            for ins in tail {
+                writeln!(f, "    {:42 } | {}", " ", ins.ins)?;
+            }
+        }
+
+        let Some(last) = self.block.instr.last() else {
+            writeln!(
+                f,
+                "    {}: {:32} | {}",
+                self.block.terminator.addr, " ", self.block.terminator.inner
+            )?;
+
+            return Ok(());
+        };
+        if last.addr == self.block.terminator.addr {
+            writeln!(f, "    {:42 } | {}", " ", self.block.terminator.inner)?;
+        } else {
+            let asm_ins = decoder.decode();
+            let asm_ins = asm_ins.to_string();
+
+            writeln!(
+                f,
+                "    {}: {:32} | {}",
+                self.block.terminator.addr, asm_ins, self.block.terminator.inner
+            )?;
+        }
+
+        Ok(())
+    }
 }
 
 fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminator> {

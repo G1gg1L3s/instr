@@ -107,8 +107,8 @@ fn main() {
         } else {
             println!("_block_{}:", block.addr);
         }
-        print_asm(&binary, &db, block.addr, block.len(), None);
-        println!();
+        let code = binary.sections.text.slice(block.addr, block.len());
+        println!("{}", block.asm_fmt(code));
         printer.advance(block.addr, block.len());
     }
 
