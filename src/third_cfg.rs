@@ -38,6 +38,7 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) {
                 }
             }
             flat_ir::Terminator::Ret { .. } => {}
+            flat_ir::Terminator::Fallthrough { next } => to_visit.push(next),
         }
 
         for ins in &block.instr {

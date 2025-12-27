@@ -1434,6 +1434,9 @@ pub enum Terminator {
     Ret {
         stack_adjust: u16,
     },
+    Fallthrough {
+        next: Addr,
+    },
 }
 
 impl std::fmt::Display for Terminator {
@@ -1446,6 +1449,7 @@ impl std::fmt::Display for Terminator {
             } => write!(f, "if {cond} then {then_bb} else {else_bb}"),
             Self::Jump { target } => write!(f, "jump {target}"),
             Self::Ret { stack_adjust } => write!(f, "ret {stack_adjust}"),
+            Self::Fallthrough { next } => write!(f, "fallthrough {next}"),
         }
     }
 }
@@ -2101,14 +2105,14 @@ fn lower_ret(_ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
 
 pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
     let mut ctx = LowerCtx::new();
-    let decoder = iced_x86::Decoder::with_ip(
+    let mut decoder = iced_x86::Decoder::with_ip(
         32,
         code,
         block_addr.0.into(),
         iced_x86::DecoderOptions::NONE,
     );
 
-    for ins in decoder {
+    for ins in &mut decoder {
         if let Some(terminator) = lower_ins(&mut ctx, &ins) {
             return Block {
                 addr: block_addr,
@@ -2121,5 +2125,15 @@ pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
         }
     }
 
-    panic!("reached end of code")
+    let terminator = AnnotatedTerminator {
+        addr: Addr(0),
+        inner: Terminator::Fallthrough {
+            next: Addr(decoder.ip() as _),
+        },
+    };
+    Block {
+        addr: block_addr,
+        instr: ctx.instrs,
+        terminator,
+    }
 }
