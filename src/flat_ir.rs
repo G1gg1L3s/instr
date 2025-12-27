@@ -2055,6 +2055,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
 
         Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add, Fpop::No, FRev::No),
         Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mulu, Fpop::No, FRev::No),
+
+        Mnemonic::Fdiv => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::No),
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes, FRev::No),
         Mnemonic::Fdivr => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::Yes),
 
