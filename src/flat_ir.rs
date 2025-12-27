@@ -118,6 +118,8 @@ pub enum Condition {
     Positive,
     Overflow,
     NoOverflow,
+    ParityEven,
+    ParityOdd,
 }
 
 impl std::fmt::Display for Condition {
@@ -137,6 +139,8 @@ impl std::fmt::Display for Condition {
             Condition::Positive => "+",
             Condition::Overflow => "overflow",
             Condition::NoOverflow => "!overflow",
+            Condition::ParityEven => "parity_even",
+            Condition::ParityOdd => "parity_odd",
         };
         write!(f, "{literal}")
     }
@@ -1477,6 +1481,9 @@ fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
         Mnemonic::Js => Condition::Negative,  // SF = 1
         Mnemonic::Jns => Condition::Positive, // SF = 0
 
+        Mnemonic::Jp => Condition::ParityEven, // PF = 1
+        Mnemonic::Jnp => Condition::ParityOdd, // PF = 0
+
         _ => panic!("unknown ins: {ins}"),
     };
 
@@ -2019,6 +2026,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         | Mnemonic::Jno // of = 0
         | Mnemonic::Js // sf = 1
         | Mnemonic::Jns //  sf = 0
+        | Mnemonic::Jp //  pf = 1
+        | Mnemonic::Jnp //  pf = 0
             => return Some(lower_jmp_x(ctx, ins)),
 
         Mnemonic::Jmp => return Some(lower_jmp(ctx, ins)),
