@@ -315,6 +315,7 @@ pub enum Value {
     Imm(Imm),
     Temp(Temp),
     Flag(Flag),
+    X87StatusWord,
 }
 
 impl std::fmt::Display for Value {
@@ -324,6 +325,7 @@ impl std::fmt::Display for Value {
             Value::Imm(x) => write!(f, "{x}"),
             Value::Temp(x) => write!(f, "{x}"),
             Value::Flag(flag) => write!(f, "{flag}"),
+            Value::X87StatusWord => write!(f, "__x87_status_word"),
         }
     }
 }
@@ -335,6 +337,7 @@ impl Value {
             Value::Imm(imm) => imm.size(),
             Value::Temp(temp) => temp.size,
             Value::Flag(_) => Size::U1,
+            Value::X87StatusWord => Size::U16,
         }
     }
 }
@@ -1408,6 +1411,11 @@ fn lower_fcom(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     }
 }
 
+fn lower_fnstsw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let dest = lower_operand(ctx, ins, 0);
+    dest.lower_store(ctx, Value::X87StatusWord);
+}
+
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
@@ -2051,6 +2059,8 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
 
         Mnemonic::Fxch => lower_fxch(ctx, ins),
         Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp => lower_fcom(ctx, ins),
+
+        Mnemonic::Fnstsw => lower_fnstsw(ctx, ins),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
