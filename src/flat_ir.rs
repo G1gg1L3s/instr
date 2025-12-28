@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use iced_x86::{Mnemonic, OpKind};
 
 use crate::addr::Addr;
@@ -413,9 +411,6 @@ pub enum Instr {
         src: Value,
         space: MemSpace,
     },
-    Call {
-        target: Value,
-    },
 
     Not {
         dst: Value,
@@ -499,9 +494,6 @@ impl std::fmt::Display for Instr {
                     write!(f, " [fs]")?;
                 }
                 Ok(())
-            }
-            Self::Call { target } => {
-                write!(f, "call {target}")
             }
             Self::Not { dst, src } => write!(f, "{dst} = not {src}"),
             Self::SliceBytes { dst, src, start } => {
@@ -1071,9 +1063,13 @@ fn lower_pop(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
-fn lower_call(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+fn lower_call(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     let target = lower_operand(ctx, ins, 0).lower_load(ctx);
-    ctx.emit(Instr::Call { target });
+    Terminator::Call {
+        addr: Addr(ins.ip32()),
+        target,
+        next: Addr(ins.next_ip32()),
+    }
 }
 
 fn bin_size(lhs: &Value, rhs: &Value) -> Size {
@@ -1444,6 +1440,11 @@ pub enum Terminator {
         addr: Addr,
         stack_adjust: u16,
     },
+    Call {
+        addr: Addr,
+        target: Value,
+        next: Addr,
+    },
     Fallthrough {
         next: Addr,
     },
@@ -1459,6 +1460,7 @@ impl std::fmt::Display for Terminator {
                 ..
             } => write!(f, "if {cond} then {then_bb} else {else_bb}"),
             Self::Jump { target, .. } => write!(f, "jump {target}"),
+            Self::Call { target, next, .. } => write!(f, "call {target}, next {next}"),
             Self::Ret { stack_adjust, .. } => write!(f, "ret {stack_adjust}"),
             Self::Fallthrough { next, .. } => write!(f, "fallthrough {next}"),
         }
@@ -1470,7 +1472,8 @@ impl Terminator {
         match self {
             Terminator::Cond { addr, .. }
             | Terminator::Jump { addr, .. }
-            | Terminator::Ret { addr, .. } => Some(*addr),
+            | Terminator::Ret { addr, .. }
+            | Terminator::Call { addr, .. } => Some(*addr),
             Terminator::Fallthrough { .. } => None,
         }
     }
@@ -2128,7 +2131,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         Mnemonic::Pop => lower_pop(ctx, ins),
         Mnemonic::Leave => lower_leave(ctx, ins),
 
-        Mnemonic::Call => lower_call(ctx, ins),
+        Mnemonic::Call => return Some(lower_call(ctx, ins)),
         Mnemonic::Mov | Mnemonic::Movzx | Mnemonic::Movsx => lower_mov(ctx, ins),
         Mnemonic::Cmp => lower_cmp(ctx, ins),
         Mnemonic::Test => lower_test(ctx, ins),

@@ -52,22 +52,18 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
                     block_starts.insert(Addr(u32));
                 }
             }
+            flat_ir::Terminator::Call { target, next, .. } => {
+                if let Value::Imm(Imm::U32(u32)) = target {
+                    to_visit.push(Addr(u32));
+                    block_starts.insert(Addr(u32));
+                }
+                to_visit.push(next);
+                block_starts.insert(next);
+            }
             flat_ir::Terminator::Ret { .. } => {}
             flat_ir::Terminator::Fallthrough { next } => {
                 to_visit.push(next);
                 block_starts.insert(next);
-            }
-        }
-
-        for ins in &block.instr {
-            match &ins.ins {
-                flat_ir::Instr::Call {
-                    target: Value::Imm(Imm::U32(addr)),
-                } => {
-                    to_visit.push(Addr(*addr));
-                    block_starts.insert(Addr(*addr));
-                }
-                _ => {}
             }
         }
 
@@ -151,6 +147,9 @@ fn derive_func(blocks: &BTreeMap<Addr, Block>, entries: &HashSet<Addr>, start: A
             flat_ir::Terminator::Fallthrough { next } => {
                 worklist.push(next);
             }
+            flat_ir::Terminator::Call { next, .. } => {
+                worklist.push(next);
+            }
         }
     }
 
@@ -165,13 +164,12 @@ fn collect_entries<'a>(blocks: impl Iterator<Item = &'a Block>) -> HashSet<Addr>
     let mut set = HashSet::new();
 
     for block in blocks {
-        for ins in &block.instr {
-            if let flat_ir::Instr::Call {
-                target: Value::Imm(Imm::U32(addr)),
-            } = &ins.ins
-            {
-                set.insert(Addr(*addr));
-            }
+        if let flat_ir::Terminator::Call {
+            target: Value::Imm(Imm::U32(addr)),
+            ..
+        } = &block.terminator
+        {
+            set.insert(Addr(*addr));
         }
     }
 
