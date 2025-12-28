@@ -2095,28 +2095,24 @@ impl<'a> std::fmt::Display for AsmBlockFmt<'a> {
         let terminator_addr = self.block.terminator.addr();
 
         match (last_ins, terminator_addr) {
-            (None, Some(addr)) => {
-                writeln!(f, "    {}: {:32} | {}", addr, " ", self.block.terminator)?;
+            (Some(ins), Some(term)) if ins.addr == term => {
+                writeln!(f, "    {:42 } | {}", " ", self.block.terminator)?;
             }
-            (Some(ins), None) => {
+            (_, Some(addr)) => {
+                let asm_ins = decoder.decode();
+                assert_eq!(Addr(asm_ins.ip32()), addr);
+                let asm_ins = asm_ins.to_string();
+                writeln!(
+                    f,
+                    "    {}: {:32} | {}",
+                    addr, asm_ins, self.block.terminator
+                )?;
+            }
+            (Some(_), None) => {
                 writeln!(f, "    {:42 } | {}", " ", self.block.terminator)?;
             }
             (None, None) => {
                 writeln!(f, "              | <empty>")?;
-            }
-            (Some(ins), Some(term)) if ins.addr == term => {
-                writeln!(f, "    {:42 } | {}", " ", self.block.terminator)?;
-            }
-            (Some(ins), Some(term)) => {
-                let asm_ins = decoder.decode();
-                assert_eq!(Addr(asm_ins.ip32()), term);
-                let asm_ins = asm_ins.to_string();
-
-                writeln!(
-                    f,
-                    "    {}: {:32} | {}",
-                    term, asm_ins, self.block.terminator
-                )?;
             }
         }
 
