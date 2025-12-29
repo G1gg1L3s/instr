@@ -33,41 +33,41 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
 
         let block = flat_ir::lower_block(code, addr);
 
-        match block.terminator {
+        match block.terminator() {
             flat_ir::Terminator::Cond {
                 then_bb, else_bb, ..
             } => {
                 if let Value::Imm(Imm::U32(u32)) = then_bb {
-                    to_visit.push(Addr(u32));
-                    block_starts.insert(Addr(u32));
+                    to_visit.push(Addr(*u32));
+                    block_starts.insert(Addr(*u32));
                 }
                 if let Value::Imm(Imm::U32(u32)) = else_bb {
-                    to_visit.push(Addr(u32));
-                    block_starts.insert(Addr(u32));
+                    to_visit.push(Addr(*u32));
+                    block_starts.insert(Addr(*u32));
                 }
             }
             flat_ir::Terminator::Jump { target, .. } => {
                 if let Value::Imm(Imm::U32(u32)) = target {
-                    to_visit.push(Addr(u32));
-                    block_starts.insert(Addr(u32));
+                    to_visit.push(Addr(*u32));
+                    block_starts.insert(Addr(*u32));
                 }
             }
             flat_ir::Terminator::Call { target, next, .. } => {
                 if let Value::Imm(Imm::U32(u32)) = target {
-                    to_visit.push(Addr(u32));
-                    block_starts.insert(Addr(u32));
+                    to_visit.push(Addr(*u32));
+                    block_starts.insert(Addr(*u32));
                 }
-                to_visit.push(next);
-                block_starts.insert(next);
+                to_visit.push(*next);
+                block_starts.insert(*next);
             }
             flat_ir::Terminator::Ret { .. } => {}
             flat_ir::Terminator::Fallthrough { next } => {
-                to_visit.push(next);
-                block_starts.insert(next);
+                to_visit.push(*next);
+                block_starts.insert(*next);
             }
         }
 
-        blocks.insert(block.addr, block);
+        blocks.insert(block.addr(), block);
     }
 
     blocks
@@ -125,30 +125,30 @@ fn derive_func(blocks: &BTreeMap<Addr, Block>, entries: &HashSet<Addr>, start: A
         func_blocks.insert(addr);
         let block = &blocks[&addr];
 
-        match block.terminator {
+        match block.terminator() {
             flat_ir::Terminator::Cond {
                 then_bb, else_bb, ..
             } => {
                 if let Value::Imm(Imm::U32(u32)) = then_bb {
-                    worklist.push(Addr(u32));
+                    worklist.push(Addr(*u32));
                 }
                 if let Value::Imm(Imm::U32(u32)) = else_bb {
-                    worklist.push(Addr(u32));
+                    worklist.push(Addr(*u32));
                 }
             }
             flat_ir::Terminator::Jump { target, .. } => {
                 if let Value::Imm(Imm::U32(u32)) = target {
-                    worklist.push(Addr(u32));
+                    worklist.push(Addr(*u32));
                 }
             }
             flat_ir::Terminator::Ret { .. } => {
-                exits.insert(block.addr);
+                exits.insert(block.addr());
             }
             flat_ir::Terminator::Fallthrough { next } => {
-                worklist.push(next);
+                worklist.push(*next);
             }
             flat_ir::Terminator::Call { next, .. } => {
-                worklist.push(next);
+                worklist.push(*next);
             }
         }
     }
@@ -167,7 +167,7 @@ fn collect_entries<'a>(blocks: impl Iterator<Item = &'a Block>) -> HashSet<Addr>
         if let flat_ir::Terminator::Call {
             target: Value::Imm(Imm::U32(addr)),
             ..
-        } = &block.terminator
+        } = &block.terminator()
         {
             set.insert(Addr(*addr));
         }

@@ -2003,10 +2003,10 @@ fn emit_convert(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
 
 #[derive(Debug)]
 pub struct Block {
-    pub addr: Addr,
-    pub instr: Vec<AnnotatedInstr>,
-    pub terminator: Terminator,
-    pub size: u32,
+    addr: Addr,
+    instr: Vec<AnnotatedInstr>,
+    terminator: Terminator,
+    size: u32,
 }
 
 impl std::fmt::Display for Block {
@@ -2060,6 +2060,18 @@ impl Block {
 
     pub fn asm_fmt<'a>(&'a self, code: &'a [u8]) -> AsmBlockFmt<'a> {
         AsmBlockFmt { block: self, code }
+    }
+
+    pub fn addr(&self) -> Addr {
+        self.addr
+    }
+
+    pub fn instr(&self) -> &[AnnotatedInstr] {
+        &self.instr
+    }
+
+    pub fn terminator(&self) -> &Terminator {
+        &self.terminator
     }
 }
 

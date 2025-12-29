@@ -104,9 +104,9 @@ fn main() {
 
         for block in func.blocks().iter() {
             let block = blocks.get(block).unwrap();
-            let code = binary.sections.text.slice(block.addr, block.len());
+            let code = binary.sections.text.slice(block.addr(), block.len());
 
-            println!("_block_{}:", block.addr);
+            println!("_block_{}:", block.addr());
             println!("{}", block.asm_fmt(code));
         }
     }
@@ -115,16 +115,16 @@ fn main() {
 
     let mut printer = PrinterOfSkipped::new(binary.sections.text);
     for block in blocks.values() {
-        printer.print_skipped(block.addr);
+        printer.print_skipped(block.addr());
 
-        if block.addr == binary.entry_point {
+        if block.addr() == binary.entry_point {
             println!("_start:");
         } else {
-            println!("_block_{}:", block.addr);
+            println!("_block_{}:", block.addr());
         }
-        let code = binary.sections.text.slice(block.addr, block.len());
+        let code = binary.sections.text.slice(block.addr(), block.len());
         println!("{}", block.asm_fmt(code));
-        printer.advance(block.addr, block.len());
+        printer.advance(block.addr(), block.len());
     }
 
     println!(".rdata:");
