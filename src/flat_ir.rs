@@ -187,7 +187,50 @@ impl std::fmt::Display for Reg {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TempId(u32);
+pub struct TempId(u16);
+
+impl std::fmt::Display for TempId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "t{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Temp {
+    size: Size,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Vars {
+    temps: Vec<Temp>,
+}
+
+impl Vars {
+    fn new() -> Self {
+        Self { temps: vec![] }
+    }
+
+    fn new_temp(&mut self, size: Size) -> Value {
+        let id = self.temps.len().try_into().expect("too much temps");
+        self.temps.push(Temp { size });
+        Value::Temp(TempId(id))
+    }
+
+    fn temp(&self, id: TempId) -> Temp {
+        let idx = usize::from(id.0);
+        self.temps[idx]
+    }
+
+    fn size(&self, value: Value) -> Size {
+        match value {
+            Value::Reg(reg) => reg.size(),
+            Value::Imm(imm) => imm.size(),
+            Value::Temp(temp) => self.temp(temp).size,
+            Value::Flag(_) => Size::U1,
+            Value::X87StatusWord => Size::U16,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Imm {
@@ -302,22 +345,10 @@ impl std::fmt::Display for Size {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Temp {
-    id: TempId,
-    size: Size,
-}
-
-impl std::fmt::Display for Temp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "t{}", self.id.0)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Value {
     Reg(Reg),
     Imm(Imm),
-    Temp(Temp),
+    Temp(TempId),
     Flag(Flag),
     X87StatusWord,
 }
@@ -330,18 +361,6 @@ impl std::fmt::Display for Value {
             Value::Temp(x) => write!(f, "{x}"),
             Value::Flag(flag) => write!(f, "{flag}"),
             Value::X87StatusWord => write!(f, "__x87_status_word"),
-        }
-    }
-}
-
-impl Value {
-    pub fn size(&self) -> Size {
-        match self {
-            Value::Reg(reg) => reg.size(),
-            Value::Imm(imm) => imm.size(),
-            Value::Temp(temp) => temp.size,
-            Value::Flag(_) => Size::U1,
-            Value::X87StatusWord => Size::U16,
         }
     }
 }
@@ -462,10 +481,27 @@ pub enum Instr {
     },
 }
 
-impl std::fmt::Display for Instr {
+#[derive(Debug, Clone, Copy)]
+pub struct AnnotatedInstr {
+    pub addr: Addr,
+    pub ins: Instr,
+}
+
+impl Instr {
+    pub fn fmt<'a>(&'a self, vars: &'a Vars) -> InstrPrinter<'a> {
+        InstrPrinter { vars, ins: self }
+    }
+}
+
+pub struct InstrPrinter<'a> {
+    vars: &'a Vars,
+    ins: &'a Instr,
+}
+
+impl<'a> std::fmt::Display for InstrPrinter<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::BinOp {
+        match self.ins {
+            Instr::BinOp {
                 op,
                 dst,
                 lhs,
@@ -478,52 +514,52 @@ impl std::fmt::Display for Instr {
                     write!(f, "{dst}, {flags} = {lhs} {op} {rhs}")
                 }
             }
-            Self::Assign { dst, src } => write!(f, "{dst} = {src}"),
-            Self::Load { dst, addr, space } => {
-                let size = dst.size();
+            Instr::Assign { dst, src } => write!(f, "{dst} = {src}"),
+            Instr::Load { dst, addr, space } => {
+                let size = self.vars.size(*dst);
                 write!(f, "{dst} = load {size} [{addr}]")?;
                 if *space == MemSpace::Fs {
                     write!(f, " [fs]")?;
                 }
                 Ok(())
             }
-            Self::Store { addr, src, space } => {
-                let size = src.size();
+            Instr::Store { addr, src, space } => {
+                let size = self.vars.size(*src);
                 write!(f, "[{addr}] <- store {size} {src}")?;
                 if *space == MemSpace::Fs {
                     write!(f, " [fs]")?;
                 }
                 Ok(())
             }
-            Self::Not { dst, src } => write!(f, "{dst} = not {src}"),
-            Self::SliceBytes { dst, src, start } => {
-                let end = u32::from(*start) + dst.size().to_bytes().unwrap();
+            Instr::Not { dst, src } => write!(f, "{dst} = not {src}"),
+            Instr::SliceBytes { dst, src, start } => {
+                let end = u32::from(*start) + self.vars.size(*dst).to_bytes().unwrap();
 
                 write!(f, "{dst} = slice {src}[{start}..{end}]")
             }
-            Self::SetBytes {
+            Instr::SetBytes {
                 dst,
                 base,
                 value,
                 start,
             } => {
-                let end = u32::from(*start) + value.size().to_bytes().unwrap();
+                let end = u32::from(*start) + self.vars.size(*value).to_bytes().unwrap();
                 write!(f, "{dst} = slice {base}[{start}..{end}] set {value}")
             }
-            Self::Convert { dst, src } => {
-                let src_size = src.size();
-                let dst_size = dst.size();
+            Instr::Convert { dst, src } => {
+                let src_size = self.vars.size(*src);
+                let dst_size = self.vars.size(*dst);
                 write!(f, "{dst} = {src_size}to{dst_size} {src}")
             }
-            Self::Nop => write!(f, "nop"),
-            Self::X87Push { src, flags } => {
+            Instr::Nop => write!(f, "nop"),
+            Instr::X87Push { src, flags } => {
                 if flags.is_empty() {
                     write!(f, "x87.push {src}")
                 } else {
                     write!(f, "{flags} = x87.push {src}")
                 }
             }
-            Self::X87Pop { dst, flags } => {
+            Instr::X87Pop { dst, flags } => {
                 match (dst, flags.is_empty()) {
                     (Some(dst), true) => write!(f, "{dst} = ")?,
                     (Some(dst), false) => write!(f, "{dst}, {flags} = ")?,
@@ -533,8 +569,8 @@ impl std::fmt::Display for Instr {
 
                 write!(f, "x87.pop")
             }
-            Self::Memset { addr, value, count } => write!(f, "__memset({addr}, {value}, {count})"),
-            Self::Memcpy {
+            Instr::Memset { addr, value, count } => write!(f, "__memset({addr}, {value}, {count})"),
+            Instr::Memcpy {
                 dst_addr,
                 src_addr,
                 count,
@@ -544,16 +580,10 @@ impl std::fmt::Display for Instr {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct AnnotatedInstr {
-    pub addr: Addr,
-    pub ins: Instr,
-}
-
 #[derive(Debug)]
 pub struct LowerCtx {
-    pub instrs: Vec<AnnotatedInstr>,
-    temps: Vec<Temp>,
+    instrs: Vec<AnnotatedInstr>,
+    vars: Vars,
     addr: Addr,
 }
 
@@ -562,10 +592,10 @@ impl std::fmt::Display for LowerCtx {
         for chunk in self.instrs.chunk_by(|a, b| a.addr == b.addr) {
             let (head, tail) = chunk.split_first().unwrap();
 
-            writeln!(f, "{}: {}", chunk[0].addr, head.ins)?;
+            writeln!(f, "{}: {}", chunk[0].addr, head.ins.fmt(&self.vars))?;
 
             for ins in tail {
-                writeln!(f, "          {}", ins.ins)?;
+                writeln!(f, "          {}", ins.ins.fmt(&self.vars))?;
             }
         }
         Ok(())
@@ -576,21 +606,13 @@ impl LowerCtx {
     pub fn new() -> Self {
         Self {
             instrs: Vec::new(),
-            temps: Vec::new(),
+            vars: Vars::new(),
             addr: Addr(0),
         }
     }
 
     fn new_temp(&mut self, size: Size) -> Value {
-        let id = self.temps.len() as u32;
-        self.temps.push(Temp {
-            id: TempId(id),
-            size,
-        });
-        Value::Temp(Temp {
-            id: TempId(id),
-            size,
-        })
+        self.vars.new_temp(size)
     }
 
     fn emit(&mut self, ins: Instr) {
@@ -602,6 +624,10 @@ impl LowerCtx {
 
     fn set_addr(&mut self, addr: Addr) {
         self.addr = addr;
+    }
+
+    fn size(&self, value: Value) -> Size {
+        self.vars.size(value)
     }
 }
 
@@ -858,7 +884,7 @@ impl Operand {
                 });
             }
             Operand::SubReg { reg, lo, size } => {
-                let value_size = value.size();
+                let value_size = ctx.size(value);
                 assert_eq!(value_size, size);
 
                 let base = Value::Reg(reg);
@@ -1004,7 +1030,7 @@ fn lower_push(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         op: BinOp::Sub,
         dst: new_esp,
         lhs: esp.clone(),
-        rhs: Value::Imm(Imm::U32(value.size().to_bytes().unwrap())),
+        rhs: Value::Imm(Imm::U32(ctx.size(value).to_bytes().unwrap())),
         flags: FlagxGroup::NONE,
     });
 
@@ -1072,9 +1098,9 @@ fn lower_call(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     }
 }
 
-fn bin_size(lhs: &Value, rhs: &Value) -> Size {
-    let lhs = lhs.size();
-    let rhs = rhs.size();
+fn bin_size(ctx: &mut LowerCtx, lhs: Value, rhs: Value) -> Size {
+    let lhs = ctx.size(lhs);
+    let rhs = ctx.size(rhs);
     if lhs == rhs {
         lhs
     } else {
@@ -1082,9 +1108,14 @@ fn bin_size(lhs: &Value, rhs: &Value) -> Size {
     }
 }
 
+fn new_temp_with_bin_size(ctx: &mut LowerCtx, lhs: Value, rhs: Value) -> Value {
+    let size = bin_size(ctx, lhs, rhs);
+    ctx.new_temp(size)
+}
+
 fn lower_binary_bit_op(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
     lower_bin_operation(ctx, ins, |ctx, _ins, lhs, rhs| {
-        let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
+        let tmp = new_temp_with_bin_size(ctx, lhs, rhs);
         ctx.emit(Instr::BinOp {
             op,
             dst: tmp,
@@ -1098,7 +1129,7 @@ fn lower_binary_bit_op(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
 
 fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
     lower_bin_operation(ctx, ins, |ctx, _ins, lhs, rhs| {
-        let res = ctx.new_temp(bin_size(&lhs, &rhs));
+        let res = new_temp_with_bin_size(ctx, lhs, rhs);
         ctx.emit(Instr::BinOp {
             op,
             dst: res,
@@ -1113,7 +1144,7 @@ fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
 fn lower_mul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let rhs_op = lower_operand(ctx, ins, 0);
     let rhs = rhs_op.lower_load(ctx);
-    let size = rhs.size();
+    let size = ctx.size(rhs);
 
     let (eax_op, edx_op) = match size {
         Size::U8 => (
@@ -1236,7 +1267,7 @@ fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
     let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
 
     // Mask shift count: x86 masks by 0x1F for 32-bit operands
-    let rhs_size = rhs.size();
+    let rhs_size = ctx.size(rhs);
     let masked_count = emit_bin(
         ctx,
         BinOp::BitAnd,
@@ -1253,7 +1284,7 @@ fn lower_cmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
     let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
 
-    let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
+    let tmp = new_temp_with_bin_size(ctx, lhs, rhs);
     ctx.emit(Instr::BinOp {
         op: BinOp::Sub,
         dst: tmp,
@@ -1267,7 +1298,7 @@ fn lower_test(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
     let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
 
-    let tmp = ctx.new_temp(bin_size(&lhs, &rhs));
+    let tmp = new_temp_with_bin_size(ctx, lhs, rhs);
     ctx.emit(Instr::BinOp {
         op: BinOp::BitAnd,
         dst: tmp,
@@ -1545,7 +1576,7 @@ fn lower_lea(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 fn lower_inc_dec(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let operand = lower_operand(ctx, ins, 0);
     let lhs = operand.lower_load(ctx);
-    let size = lhs.size();
+    let size = ctx.size(lhs);
     let imm = Imm::new_u(1, size).unwrap();
 
     let op = if ins.mnemonic() == Mnemonic::Inc {
@@ -1561,7 +1592,7 @@ fn lower_inc_dec(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 fn lower_neg(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let operand = lower_operand(ctx, ins, 0);
     let value = operand.lower_load(ctx);
-    let size = value.size();
+    let size = ctx.size(value);
 
     let lhs = Value::Imm(Imm::new_u(0, size).unwrap());
     let new = emit_bin_with_flags(ctx, BinOp::Sub, lhs, value, FlagxGroup::ALL);
@@ -1572,7 +1603,7 @@ fn lower_neg(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 fn lower_not(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let operand = lower_operand(ctx, ins, 0);
     let value = operand.lower_load(ctx);
-    let size = value.size();
+    let size = ctx.size(value);
 
     let res = ctx.new_temp(size);
     ctx.emit(Instr::Not { dst: res, src: res });
@@ -1694,7 +1725,7 @@ fn lower_flag_as_int(ctx: &mut LowerCtx, flag: Flag, size: Size) -> Value {
 
 fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     lower_bin_operation(ctx, ins, |ctx, _ins, lhs, rhs| {
-        let size = bin_size(&lhs, &rhs);
+        let size = bin_size(ctx, lhs, rhs);
 
         // CF as integer (0 or 1)
         let cf_int = lower_flag_as_int(ctx, Flag::Cf, size);
@@ -1956,8 +1987,8 @@ fn emit_bin_with_flags(
     rhs: Value,
     flags: FlagxGroup,
 ) -> Value {
-    let lhs_size = lhs.size();
-    let rhs_size = rhs.size();
+    let lhs_size = ctx.size(lhs);
+    let rhs_size = ctx.size(rhs);
     if lhs_size != rhs_size {
         panic!(
             "mismtach of binary operation sizes: {lhs_size} != {rhs_size}, for {lhs} {op} {rhs} at {}",
@@ -1975,7 +2006,7 @@ fn emit_bin_with_flags_unchecked_size(
     rhs: Value,
     flags: FlagxGroup,
 ) -> Value {
-    let lhs_size = lhs.size();
+    let lhs_size = ctx.size(lhs);
     let res = ctx.new_temp(lhs_size);
     ctx.emit(Instr::BinOp {
         op,
@@ -1988,7 +2019,7 @@ fn emit_bin_with_flags_unchecked_size(
 }
 
 fn emit_convert(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
-    let last_size = value.size();
+    let last_size = ctx.size(value);
     if last_size == size {
         value
     } else {
@@ -2005,6 +2036,7 @@ fn emit_convert(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
 pub struct Block {
     addr: Addr,
     instr: Vec<AnnotatedInstr>,
+    vars: Vars,
     terminator: Terminator,
     size: u32,
 }
@@ -2014,10 +2046,10 @@ impl std::fmt::Display for Block {
         for chunk in self.instr.chunk_by(|a, b| a.addr == b.addr) {
             let (head, tail) = chunk.split_first().unwrap();
 
-            writeln!(f, "{}: {}", chunk[0].addr, head.ins)?;
+            writeln!(f, "{}: {}", chunk[0].addr, head.ins.fmt(&self.vars))?;
 
             for ins in tail {
-                writeln!(f, "          {}", ins.ins)?;
+                writeln!(f, "          {}", ins.ins.fmt(&self.vars))?;
             }
         }
 
@@ -2073,6 +2105,10 @@ impl Block {
     pub fn terminator(&self) -> &Terminator {
         &self.terminator
     }
+
+    pub fn temp(&self, id: TempId) -> Temp {
+        self.vars.temp(id)
+    }
 }
 
 pub struct AsmBlockFmt<'a> {
@@ -2088,6 +2124,7 @@ impl<'a> std::fmt::Display for AsmBlockFmt<'a> {
             self.block.addr.0.into(),
             iced_x86::DecoderOptions::NONE,
         );
+        let vars = &self.block.vars;
 
         for chunk in self.block.instr.chunk_by(|a, b| a.addr == b.addr) {
             let (head, tail) = chunk.split_first().unwrap();
@@ -2096,10 +2133,16 @@ impl<'a> std::fmt::Display for AsmBlockFmt<'a> {
             assert_eq!(head.addr, Addr(asm_ins.ip32()));
             let asm_ins = asm_ins.to_string();
 
-            writeln!(f, "    {}: {:32} | {}", head.addr, asm_ins, head.ins)?;
+            writeln!(
+                f,
+                "    {}: {:32} | {}",
+                head.addr,
+                asm_ins,
+                head.ins.fmt(vars)
+            )?;
 
             for ins in tail {
-                writeln!(f, "    {:42 } | {}", " ", ins.ins)?;
+                writeln!(f, "    {:42 } | {}", " ", ins.ins.fmt(vars))?;
             }
         }
 
@@ -2247,6 +2290,7 @@ pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
             return Block {
                 addr: block_addr,
                 instr: ctx.instrs,
+                vars: ctx.vars,
                 terminator,
                 size,
             };
@@ -2256,6 +2300,7 @@ pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
     Block {
         addr: block_addr,
         instr: ctx.instrs,
+        vars: ctx.vars,
         terminator: Terminator::Fallthrough {
             next: Addr(decoder.ip() as _),
         },
