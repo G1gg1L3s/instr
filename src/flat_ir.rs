@@ -411,7 +411,7 @@ impl std::fmt::Display for BinOp {
 pub enum Instr {
     BinOp {
         op: BinOp,
-        dst: Value,
+        dst: Option<Value>,
         lhs: Value,
         rhs: Value,
         flags: FlagxGroup,
@@ -508,10 +508,15 @@ impl<'a> std::fmt::Display for InstrPrinter<'a> {
                 rhs,
                 flags,
             } => {
+                match dst {
+                    Some(dst) => write!(f, "{dst}"),
+                    None => write!(f, "_"),
+                }?;
+
                 if flags.is_empty() {
-                    write!(f, "{dst} = {lhs} {op} {rhs}")
+                    write!(f, " = {lhs} {op} {rhs}")
                 } else {
-                    write!(f, "{dst}, {flags} = {lhs} {op} {rhs}")
+                    write!(f, ", {flags} = {lhs} {op} {rhs}")
                 }
             }
             Instr::Assign { dst, src } => write!(f, "{dst} = {src}"),
@@ -683,7 +688,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
             let scaled = ctx.new_temp(Size::U32);
             ctx.emit(Instr::BinOp {
                 op: BinOp::Mulu,
-                dst: scaled.clone(),
+                dst: Some(scaled.clone()),
                 lhs: idx,
                 rhs: Value::Imm(Imm::U32(scale)),
                 flags: FlagxGroup::NONE,
@@ -698,7 +703,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
             let scaled_and_base = ctx.new_temp(Size::U32);
             ctx.emit(Instr::BinOp {
                 op: BinOp::Add,
-                dst: scaled_and_base,
+                dst: Some(scaled_and_base),
                 lhs: scaled,
                 rhs: base,
                 flags: FlagxGroup::NONE,
@@ -719,7 +724,7 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
             let res = ctx.new_temp(Size::U32);
             ctx.emit(Instr::BinOp {
                 op: BinOp::Add,
-                dst: res,
+                dst: Some(res),
                 lhs: scaled_and_base,
                 rhs: disp,
                 flags: FlagxGroup::NONE,
@@ -1028,7 +1033,7 @@ fn lower_push(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 
     ctx.emit(Instr::BinOp {
         op: BinOp::Sub,
-        dst: new_esp,
+        dst: Some(new_esp),
         lhs: esp.clone(),
         rhs: Value::Imm(Imm::U32(ctx.size(value).to_bytes().unwrap())),
         flags: FlagxGroup::NONE,
@@ -1077,7 +1082,7 @@ fn lower_pop(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let new_esp = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Add,
-        dst: new_esp,
+        dst: Some(new_esp),
         lhs: esp.clone(),
         rhs: Value::Imm(Imm::U32(byte_count)),
         flags: FlagxGroup::NONE,
@@ -1118,7 +1123,7 @@ fn lower_binary_bit_op(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
         let tmp = new_temp_with_bin_size(ctx, lhs, rhs);
         ctx.emit(Instr::BinOp {
             op,
-            dst: tmp,
+            dst: Some(tmp),
             lhs,
             rhs,
             flags: FlagxGroup::ALL,
@@ -1132,7 +1137,7 @@ fn lower_bin_set_flags(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
         let res = new_temp_with_bin_size(ctx, lhs, rhs);
         ctx.emit(Instr::BinOp {
             op,
-            dst: res,
+            dst: Some(res),
             lhs,
             rhs,
             flags: FlagxGroup::ALL,
@@ -1284,10 +1289,9 @@ fn lower_cmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
     let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
 
-    let tmp = new_temp_with_bin_size(ctx, lhs, rhs);
     ctx.emit(Instr::BinOp {
         op: BinOp::Sub,
-        dst: tmp,
+        dst: None,
         lhs,
         rhs,
         flags: FlagxGroup::ALL,
@@ -1298,10 +1302,9 @@ fn lower_test(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
     let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
 
-    let tmp = new_temp_with_bin_size(ctx, lhs, rhs);
     ctx.emit(Instr::BinOp {
         op: BinOp::BitAnd,
-        dst: tmp,
+        dst: None,
         lhs,
         rhs,
         flags: FlagxGroup::ALL,
@@ -1629,7 +1632,7 @@ fn _lower_enter(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let new_esp = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Sub,
-        dst: new_esp,
+        dst: Some(new_esp),
         lhs: esp.clone(),
         rhs: Value::Imm(Imm::U32(4)),
         flags: FlagxGroup::NONE,
@@ -1657,7 +1660,7 @@ fn _lower_enter(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         let esp_after_alloc = ctx.new_temp(Size::U32);
         ctx.emit(Instr::BinOp {
             op: BinOp::Sub,
-            dst: esp_after_alloc,
+            dst: Some(esp_after_alloc),
             lhs: esp.clone(),
             rhs: Value::Imm(Imm::U32(frame_size.into())),
             flags: FlagxGroup::NONE,
@@ -1702,7 +1705,7 @@ fn lower_leave(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction) {
     let esp_after_pop = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Add,
-        dst: esp_after_pop,
+        dst: Some(esp_after_pop),
         lhs: esp,
         rhs: Value::Imm(Imm::U32(4)),
         flags: FlagxGroup::NONE,
@@ -1734,7 +1737,7 @@ fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         let rhs_plus_cf = ctx.new_temp(size);
         ctx.emit(Instr::BinOp {
             op: BinOp::Add,
-            dst: rhs_plus_cf,
+            dst: Some(rhs_plus_cf),
             lhs: rhs,
             rhs: cf_int,
             flags: FlagxGroup::NONE,
@@ -1744,7 +1747,7 @@ fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         let res = ctx.new_temp(size);
         ctx.emit(Instr::BinOp {
             op: BinOp::Sub,
-            dst: res,
+            dst: Some(res),
             lhs,
             rhs: rhs_plus_cf,
             flags: FlagxGroup::ALL,
@@ -1803,7 +1806,7 @@ fn lower_stos(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         let new_edi = ctx.new_temp(Size::U32);
         ctx.emit(Instr::BinOp {
             op: BinOp::Add,
-            dst: new_edi,
+            dst: Some(new_edi),
             lhs: edi.clone(),
             rhs: Value::Imm(Imm::U32(stride)),
             flags: FlagxGroup::NONE,
@@ -1830,7 +1833,7 @@ fn lower_stos(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let byte_count = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Mulu,
-        dst: byte_count,
+        dst: Some(byte_count),
         lhs: ecx,
         rhs: Value::Imm(Imm::U32(stride)),
         flags: FlagxGroup::NONE,
@@ -1840,7 +1843,7 @@ fn lower_stos(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let new_edi = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Add,
-        dst: new_edi,
+        dst: Some(new_edi),
         lhs: edi,
         rhs: byte_count,
         flags: FlagxGroup::NONE,
@@ -1887,7 +1890,7 @@ fn lower_movs(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         let new_esi = ctx.new_temp(Size::U32);
         ctx.emit(Instr::BinOp {
             op: BinOp::Add,
-            dst: new_esi,
+            dst: Some(new_esi),
             lhs: esi.clone(),
             rhs: Value::Imm(Imm::U32(stride)),
             flags: FlagxGroup::NONE,
@@ -1901,7 +1904,7 @@ fn lower_movs(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         let new_edi = ctx.new_temp(Size::U32);
         ctx.emit(Instr::BinOp {
             op: BinOp::Add,
-            dst: new_edi,
+            dst: Some(new_edi),
             lhs: edi.clone(),
             rhs: Value::Imm(Imm::U32(stride)),
             flags: FlagxGroup::NONE,
@@ -1929,7 +1932,7 @@ fn lower_movs(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let byte_count = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Mulu,
-        dst: byte_count,
+        dst: Some(byte_count),
         lhs: ecx.clone(),
         rhs: Value::Imm(Imm::U32(stride)),
         flags: FlagxGroup::NONE,
@@ -1939,7 +1942,7 @@ fn lower_movs(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let new_edi = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Add,
-        dst: new_edi,
+        dst: Some(new_edi),
         lhs: edi.clone(),
         rhs: byte_count,
         flags: FlagxGroup::NONE,
@@ -1953,7 +1956,7 @@ fn lower_movs(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let new_esi = ctx.new_temp(Size::U32);
     ctx.emit(Instr::BinOp {
         op: BinOp::Add,
-        dst: new_esi,
+        dst: Some(new_esi),
         lhs: esi.clone(),
         rhs: byte_count,
         flags: FlagxGroup::NONE,
@@ -2010,7 +2013,7 @@ fn emit_bin_with_flags_unchecked_size(
     let res = ctx.new_temp(lhs_size);
     ctx.emit(Instr::BinOp {
         op,
-        dst: res,
+        dst: Some(res),
         lhs,
         rhs,
         flags,
