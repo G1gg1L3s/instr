@@ -20,6 +20,16 @@ pub struct Block {
     pub terminator: Option<Terminator>,
 }
 
+impl Block {
+    pub fn terminator(&self) -> &Terminator {
+        self.terminator.as_ref().unwrap()
+    }
+
+    pub fn terminator_mut(&mut self) -> &mut Terminator {
+        self.terminator.as_mut().unwrap()
+    }
+}
+
 impl Blocks {
     pub fn new() -> Self {
         Self(vec![])
@@ -34,6 +44,10 @@ impl Blocks {
     pub fn keys(&self) -> impl Iterator<Item = BlockId> {
         let max = self.0.len().try_into().unwrap();
         BlockKeys(0..max)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (BlockId, &Block)> {
+        self.keys().zip(self.0.iter())
     }
 }
 

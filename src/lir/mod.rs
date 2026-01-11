@@ -1,6 +1,9 @@
 pub mod block;
 pub mod fmt;
+pub mod func;
 pub mod ins;
+pub mod ins_builder;
 pub mod ir;
+pub mod ssa_builder;
 pub mod ty;
 pub mod value;

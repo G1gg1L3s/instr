@@ -104,6 +104,9 @@ pub enum Ins {
         lhs: ValueId,
         rhs: ValueId,
     },
+    Uninit {
+        dst: ValueId,
+    },
     Unimpl,
 }
 
@@ -111,6 +114,7 @@ impl std::fmt::Display for Ins {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Ins::BinOp { op, dst, lhs, rhs } => write!(f, "{dst} = {lhs} {op} {rhs}"),
+            Ins::Uninit { dst } => write!(f, "{dst} = ???"),
             Ins::Unimpl => todo!(),
         }
     }
@@ -165,6 +169,27 @@ impl std::fmt::Display for Terminator {
                 write!(f, "brif? {cond} then {thenb} else {elseb}")
             }
             Terminator::Ret { size } => write!(f, "ret {size}"),
+        }
+    }
+}
+
+impl Terminator {
+    pub fn visit_jumps_mut(&mut self, mut callback: impl FnMut(BlockId, &mut Vec<ValueId>)) {
+        match self {
+            Terminator::Jump { target, args } => callback(*target, args),
+            Terminator::Brif {
+                cond: _,
+                thenb,
+                then_args,
+                elseb,
+                else_args,
+            } => {
+                callback(*thenb, then_args);
+                callback(*elseb, else_args);
+            }
+            Terminator::JumpUnknown { .. } => {}
+            Terminator::BrifUnknown { .. } => {}
+            Terminator::Ret { .. } => {}
         }
     }
 }

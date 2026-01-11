@@ -12,6 +12,7 @@ pub struct ValueId(u16);
 pub enum Value {
     Invalid,
     Temp { ty: Ty },
+    Alias { to: ValueId },
 }
 
 impl Values {
