@@ -8,6 +8,12 @@ pub struct Values(Vec<Value>);
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ValueId(u16);
 
+impl ValueId {
+    pub fn id(self) -> u16 {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     Invalid,
@@ -29,6 +35,10 @@ impl Values {
     pub fn keys(&self) -> impl Iterator<Item = ValueId> {
         let max = self.0.len().try_into().unwrap();
         ValueKeys(0..max)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (ValueId, &Value)> {
+        self.keys().zip(self.0.iter())
     }
 }
 

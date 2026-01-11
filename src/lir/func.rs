@@ -1,20 +1,27 @@
-use crate::lir::{
-    block::{BlockId, Blocks},
-    ins::Instrs,
-    ins_builder::InsBuilder,
-    value::{Value, ValueId, Values},
+use std::collections::HashMap;
+
+use crate::{
+    addr::Addr,
+    lir::{
+        block::{BlockId, Blocks},
+        ins::{Ins, InsId, Instrs},
+        ins_builder::InsBuilder,
+        value::{Value, ValueId, Values},
+    },
 };
 
 #[derive(Debug)]
 pub struct SsaFunction {
+    pub addr: Addr,
     pub ins: Instrs,
     pub blocks: Blocks,
     pub values: Values,
 }
 
 impl SsaFunction {
-    pub fn new() -> Self {
+    pub fn new(addr: Addr) -> Self {
         Self {
+            addr,
             ins: Instrs::new(),
             blocks: Blocks::new(),
             values: Values::new(),
@@ -67,5 +74,24 @@ impl SsaFunction {
                 args.push(val);
             }
         });
+    }
+
+    pub(crate) fn inverse_aliases(&self) -> HashMap<ValueId, Vec<ValueId>> {
+        let mut res = std::collections::HashMap::<ValueId, Vec<_>>::new();
+        for (val_id, val) in self.values.iter() {
+            if let Value::Alias { to } = val {
+                res.entry(*to).or_default().push(val_id);
+            }
+        }
+        res
+    }
+
+    pub fn instr_result(&self, ins: InsId) -> Option<ValueId> {
+        let ins = &self.ins[ins];
+        match ins {
+            Ins::Uninit { dst } => Some(*dst),
+            Ins::BinOp { dst, .. } => Some(*dst),
+            Ins::Unimpl => None,
+        }
     }
 }

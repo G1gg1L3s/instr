@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 
-use crate::lir::{
-    block::BlockId,
-    func::SsaFunction,
-    ins_builder::InsBuilder,
-    value::{Value, ValueId},
+use crate::{
+    addr::Addr,
+    lir::{
+        block::BlockId,
+        func::SsaFunction,
+        ins_builder::InsBuilder,
+        value::{Value, ValueId},
+    },
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -29,9 +32,9 @@ pub struct SsaBuilder {
 }
 
 impl SsaBuilder {
-    pub fn new() -> Self {
+    pub fn new(addr: Addr) -> Self {
         Self {
-            func: SsaFunction::new(),
+            func: SsaFunction::new(addr),
             next_var: 0,
             current_block: None,
             blocks: HashMap::new(),
