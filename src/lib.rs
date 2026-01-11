@@ -4,6 +4,7 @@ pub mod cfg;
 pub mod cfg_func;
 pub mod flat_ir;
 pub mod ins;
+pub mod lir;
 pub mod new_cfg;
 pub mod obj;
 pub mod string;
