@@ -84,6 +84,29 @@ pub fn func_from_flat(
         state.blocks.insert(*block_addr, ssa);
     }
 
+    {
+        let flat_entry = func.blocks().first().unwrap();
+        let entry = state.blocks[flat_entry];
+        state.builder.switch(entry);
+        let regs = [
+            flat_ir::Reg::Esp,
+            flat_ir::Reg::Eax,
+            flat_ir::Reg::Ecx,
+            flat_ir::Reg::Edx,
+        ];
+        let mut block_state = BlockState {
+            flat_block: &blocks[flat_entry],
+            state: &mut state,
+        };
+
+        for reg in regs {
+            let var = block_state.get_var(FlatVar::Reg(reg));
+            let param = block_state.state.builder.new_param(Ty::U32);
+            block_state.state.builder.add_block_param(entry, param);
+            block_state.state.builder.write_var(var, param);
+        }
+    }
+
     for block_addr in func.blocks() {
         let flat_block = &blocks[block_addr];
         let ssa_block = state.blocks[block_addr];

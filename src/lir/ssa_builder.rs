@@ -99,7 +99,7 @@ impl SsaBuilder {
         self.func.blocks.add()
     }
 
-    fn new_param(&mut self, ty: Ty) -> ValueId {
+    pub fn new_param(&mut self, ty: Ty) -> ValueId {
         self.func.values.add(Value::Temp { ty })
     }
 
@@ -107,7 +107,7 @@ impl SsaBuilder {
         self.func.values.add(Value::Temp { ty })
     }
 
-    fn add_block_param(&mut self, block: BlockId, param: ValueId) {
+    pub fn add_block_param(&mut self, block: BlockId, param: ValueId) {
         self.func.blocks[block].params.push(param);
     }
 
