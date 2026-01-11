@@ -8,6 +8,7 @@ use crate::{
         func::SsaFunction,
         ins::{BinOp, Imm, JumpTarget},
         ssa_builder::{SsaBuilder, VarId},
+        ty::Ty,
         value::ValueId,
     },
     third_cfg,
@@ -17,6 +18,34 @@ use crate::{
 enum FlatVar {
     Reg(flat_ir::Reg),
     Temp(flat_ir::TempId),
+}
+
+impl FlatVar {
+    fn ty(self, block: &flat_ir::Block) -> Ty {
+        match self {
+            FlatVar::Reg(reg) => size_to_ssa(reg.size()),
+            FlatVar::Temp(temp_id) => {
+                let temp = block.temp(temp_id);
+                size_to_ssa(temp.size)
+            }
+        }
+    }
+}
+
+fn size_to_ssa(size: flat_ir::Size) -> Ty {
+    match size {
+        flat_ir::Size::U1 => Ty::Bool,
+        flat_ir::Size::U8 => Ty::U8,
+        flat_ir::Size::U16 => Ty::U16,
+        flat_ir::Size::U32 => Ty::U32,
+        flat_ir::Size::U64 => Ty::U64,
+        flat_ir::Size::I8 => Ty::I8,
+        flat_ir::Size::I16 => Ty::I16,
+        flat_ir::Size::I32 => Ty::I32,
+        flat_ir::Size::I64 => Ty::I64,
+        flat_ir::Size::F32 => Ty::F32,
+        flat_ir::Size::F64 => Ty::F64,
+    }
 }
 
 impl std::fmt::Display for FlatVar {
@@ -35,6 +64,11 @@ struct State {
     builder: SsaBuilder,
 }
 
+struct BlockState<'a> {
+    flat_block: &'a flat_ir::Block,
+    state: &'a mut State,
+}
+
 pub fn func_from_flat(
     func: &third_cfg::Function,
     blocks: &BTreeMap<Addr, flat_ir::Block>,
@@ -51,11 +85,16 @@ pub fn func_from_flat(
     }
 
     for block_addr in func.blocks() {
-        let ir_block = &blocks[block_addr];
+        let flat_block = &blocks[block_addr];
         let ssa_block = state.blocks[block_addr];
         state.builder.switch(ssa_block);
 
-        for AnnotatedInstr { addr: _, ins } in ir_block.instr() {
+        let mut block_state = BlockState {
+            flat_block,
+            state: &mut state,
+        };
+
+        for AnnotatedInstr { addr: _, ins } in flat_block.instr() {
             match ins {
                 &flat_ir::Instr::BinOp {
                     op,
@@ -63,24 +102,25 @@ pub fn func_from_flat(
                     lhs,
                     rhs,
                     flags,
-                } => state.lower_bin(op, dst, lhs, rhs, flags),
+                } => block_state.lower_bin(op, dst, lhs, rhs, flags),
                 _ => {
-                    state.builder.ins().unimplemented();
+                    block_state.state.builder.ins().unimplemented();
                 }
             }
         }
 
-        state.lower_terminator(ir_block.terminator());
+        block_state.lower_terminator(flat_block.terminator());
     }
 
     state.builder.finalise()
 }
 
-impl State {
+impl<'a> BlockState<'a> {
     pub fn get_var(&mut self, var: FlatVar) -> VarId {
-        *self.registers.entry(var).or_insert_with(|| {
-            let id = self.builder.declare_var();
-            log::trace!("> New var: {var} -> {id}");
+        *self.state.registers.entry(var).or_insert_with(|| {
+            let ty = var.ty(self.flat_block);
+            let id = self.state.builder.declare_var(ty);
+            log::trace!("> New var: {var} -> {id} ({ty})");
             id
         })
     }
@@ -89,16 +129,16 @@ impl State {
         match val {
             flat_ir::Value::Reg(reg) => {
                 let var = self.get_var(FlatVar::Reg(reg));
-                self.builder.read_var(var)
+                self.state.builder.read_var(var)
             }
 
             flat_ir::Value::Imm(imm) => {
                 let imm = imm_to_ssa(imm);
-                self.builder.ins().iconst(imm)
+                self.state.builder.ins().iconst(imm)
             }
             flat_ir::Value::Temp(temp_id) => {
                 let var = self.get_var(FlatVar::Temp(temp_id));
-                self.builder.read_var(var)
+                self.state.builder.read_var(var)
             }
             flat_ir::Value::Flag(_flag) => todo!(),
             flat_ir::Value::X87StatusWord => todo!(),
@@ -115,7 +155,7 @@ impl State {
         };
 
         let var = self.get_var(var);
-        self.builder.write_var(var, val);
+        self.state.builder.write_var(var, val);
     }
 
     pub fn lower_bin(
@@ -130,7 +170,7 @@ impl State {
         let rhs = self.lower_val(rhs);
         let op = op_to_ssa(op);
 
-        let res = self.builder.ins().bin(op, lhs, rhs);
+        let res = self.state.builder.ins().bin(op, lhs, rhs);
 
         if let Some(dst) = dst {
             self.lower_write_val(dst, res)
@@ -145,27 +185,27 @@ impl State {
                 then_bb,
                 else_bb,
             } => {
-                let cond = self.builder.ins().unimplemented();
+                let cond = self.state.builder.ins().unimplemented();
 
                 let thenb = self.lower_branch_target(then_bb);
                 let elseb = self.lower_branch_target(else_bb);
 
-                self.builder.ins().brif(cond, thenb, elseb);
+                self.state.builder.ins().brif(cond, thenb, elseb);
             }
             flat_ir::Terminator::Jump { addr: _, target } => {
                 let target = self.lower_branch_target(target);
-                self.builder.ins().jump(target);
+                self.state.builder.ins().jump(target);
             }
             flat_ir::Terminator::Ret {
                 addr: _,
                 stack_adjust,
             } => {
-                self.builder.ins().ret(*stack_adjust);
+                self.state.builder.ins().ret(*stack_adjust);
             }
             flat_ir::Terminator::Fallthrough { next } => {
-                let block = self.blocks[&next];
+                let block = self.state.blocks[&next];
 
-                self.builder.ins().jump(JumpTarget::Known {
+                self.state.builder.ins().jump(JumpTarget::Known {
                     block,
                     args: vec![],
                 });
@@ -175,7 +215,7 @@ impl State {
 
     fn lower_branch_target(&mut self, target: &flat_ir::Value) -> JumpTarget {
         if let Some(addr) = as_u32_addr(target) {
-            let block = self.blocks[&addr];
+            let block = self.state.blocks[&addr];
             JumpTarget::Known {
                 block,
                 args: vec![],

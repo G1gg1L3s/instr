@@ -17,7 +17,7 @@ pub enum Reg {
     St(u8),
 }
 impl Reg {
-    fn size(&self) -> Size {
+    pub fn size(&self) -> Size {
         match self {
             Reg::Eax => Size::U32,
             Reg::Ebx => Size::U32,
@@ -197,7 +197,7 @@ impl std::fmt::Display for TempId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Temp {
-    size: Size,
+    pub size: Size,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

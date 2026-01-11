@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    ops::{Index, IndexMut},
+};
 
 use crate::{
     addr::Addr,
@@ -7,6 +10,7 @@ use crate::{
         fmt::FmtList,
         func::SsaFunction,
         ins_builder::InsBuilder,
+        ty::Ty,
         value::{Value, ValueId},
     },
 };
@@ -26,6 +30,40 @@ impl std::fmt::Display for VarId {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Var {
+    ty: Ty,
+}
+
+#[derive(Debug, Clone)]
+struct Vars(Vec<Var>);
+
+impl Vars {
+    fn new() -> Self {
+        Self(vec![])
+    }
+
+    fn add(&mut self, var: Var) -> VarId {
+        let id = self.0.len().try_into().expect("to much values");
+        self.0.push(var);
+        VarId(id)
+    }
+}
+
+impl Index<VarId> for Vars {
+    type Output = Var;
+
+    fn index(&self, index: VarId) -> &Self::Output {
+        self.0.index(usize::from(index.0))
+    }
+}
+
+impl IndexMut<VarId> for Vars {
+    fn index_mut(&mut self, index: VarId) -> &mut Self::Output {
+        self.0.index_mut(usize::from(index.0))
+    }
+}
+
 #[derive(Default, Debug)]
 struct BuilderBlock {
     sealed: bool,
@@ -35,7 +73,7 @@ struct BuilderBlock {
 pub struct SsaBuilder {
     pub func: SsaFunction,
 
-    next_var: u16,
+    vars: Vars,
 
     current_block: Option<BlockId>,
 
@@ -49,7 +87,7 @@ impl SsaBuilder {
     pub fn new(addr: Addr) -> Self {
         Self {
             func: SsaFunction::new(addr),
-            next_var: 0,
+            vars: Vars::new(),
             current_block: None,
             blocks: HashMap::new(),
             variables: HashMap::new(),
@@ -61,14 +99,12 @@ impl SsaBuilder {
         self.func.blocks.add()
     }
 
-    fn new_param(&mut self) -> ValueId {
-        // TODO: type
-        self.func.values.add(Value::Invalid)
+    fn new_param(&mut self, ty: Ty) -> ValueId {
+        self.func.values.add(Value::Temp { ty })
     }
 
-    pub fn new_value(&mut self) -> ValueId {
-        // TODO: type
-        self.func.values.add(Value::Invalid)
+    pub fn new_value(&mut self, ty: Ty) -> ValueId {
+        self.func.values.add(Value::Temp { ty })
     }
 
     fn add_block_param(&mut self, block: BlockId, param: ValueId) {
@@ -81,10 +117,8 @@ impl SsaBuilder {
 
     // --- Variable handling --------------------
 
-    pub fn declare_var(&mut self) -> VarId {
-        let v = VarId(self.next_var);
-        self.next_var += 1;
-        v
+    pub fn declare_var(&mut self, ty: Ty) -> VarId {
+        self.vars.add(Var { ty })
     }
 
     pub fn switch(&mut self, block: BlockId) {
@@ -103,7 +137,7 @@ impl SsaBuilder {
         let sealed = self.blocks.get(&block).map_or(false, |b| b.sealed);
 
         if !sealed {
-            let phi = self.new_param();
+            let phi = self.new_param(self.vars[var].ty);
             log::trace!(">> Reading {var} in {block}: block not sealed, creating phi {phi}");
             self.add_block_param(block, phi);
             self.incomplete_phis
@@ -131,7 +165,7 @@ impl SsaBuilder {
             _ => {}
         }
 
-        let phi = self.new_value();
+        let phi = self.new_value(self.vars[var].ty);
         self.add_block_param(block, phi);
         self.write_var_in_block(block, var, phi);
 
