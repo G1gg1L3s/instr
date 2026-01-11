@@ -35,9 +35,15 @@ impl Blocks {
         Self(vec![])
     }
 
-    pub fn add(&mut self, block: Block) -> BlockId {
+    pub fn add(&mut self) -> BlockId {
         let id = self.0.len().try_into().expect("to much Blocks");
-        self.0.push(block);
+        self.0.push(Block {
+            id: BlockId(id),
+            params: vec![],
+            ins: vec![],
+            predecessors: vec![],
+            terminator: None,
+        });
         BlockId(id)
     }
 

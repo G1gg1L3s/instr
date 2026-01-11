@@ -7,7 +7,7 @@ use instr::{
     cfg::{Block, BlockType},
     cfg_func::GraphFunctionCollector,
     ins::{Instruction, Op, parse_instruction},
-    instruction_signature, instruction_signature_full, new_cfg,
+    instruction_signature, instruction_signature_full, lir, new_cfg,
     obj::{self, ObjDatabase, Object, ObjectTyp},
     parse_binary, third_cfg,
 };
@@ -71,6 +71,8 @@ impl<'a> std::fmt::Display for AsHexdump<'a> {
 }
 
 fn main() {
+    env_logger::init();
+
     let data = std::fs::read("../../Barnyard/Barnyard.exe").unwrap();
     let pe = pe_parser::pe::parse_portable_executable(&data).unwrap();
     let binary = parse_binary(&data, &pe).unwrap();
@@ -94,6 +96,18 @@ fn main() {
     let blocks = third_cfg::walk_code_blocks(binary.sections.text, binary.entry_point);
 
     let functions = third_cfg::derive_functions(&blocks, binary.entry_point);
+
+    let func = functions
+        .iter()
+        .find(|f| f.addr() == Addr(0x4027e0))
+        .unwrap();
+    let ssa_func = lir::flat::func_from_flat(func, &blocks);
+
+    println!(
+        "------------------------------ SSA {} ------------------------------",
+        func.addr()
+    );
+    println!("{}", ssa_func.fmt());
 
     println!(".funcs: # Detected {} functions", functions.len());
     for func in functions {

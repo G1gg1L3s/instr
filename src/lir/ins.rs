@@ -1,4 +1,4 @@
-use crate::lir::{block::BlockId, fmt::FmtList, value::ValueId};
+use crate::lir::{block::BlockId, fmt::FmtList, ty::Ty, value::ValueId};
 
 use std::ops::{Index, IndexMut};
 
@@ -104,10 +104,16 @@ pub enum Ins {
         lhs: ValueId,
         rhs: ValueId,
     },
+    Const {
+        dst: ValueId,
+        val: Imm,
+    },
     Uninit {
         dst: ValueId,
     },
-    Unimpl,
+    Unimpl {
+        dst: ValueId,
+    },
 }
 
 impl std::fmt::Display for Ins {
@@ -115,60 +121,48 @@ impl std::fmt::Display for Ins {
         match self {
             Ins::BinOp { op, dst, lhs, rhs } => write!(f, "{dst} = {lhs} {op} {rhs}"),
             Ins::Uninit { dst } => write!(f, "{dst} = ???"),
-            Ins::Unimpl => todo!(),
+            Ins::Const { dst, val } => write!(f, "{dst} = const {val}"),
+            Ins::Unimpl { dst } => write!(f, "{dst} = unimplemented"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum JumpTarget {
+    Known { block: BlockId, args: Vec<ValueId> },
+    Unknown { addr: ValueId },
+}
+
+impl std::fmt::Display for JumpTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JumpTarget::Known { block, args } => write!(f, "{block}{}", FmtList(args)),
+            JumpTarget::Unknown { addr: val } => write!(f, "?{val}"),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum Terminator {
-    Jump {
-        target: BlockId,
-        args: Vec<ValueId>,
-    },
+    Jump(JumpTarget),
     Brif {
         cond: ValueId,
-        thenb: BlockId,
-        then_args: Vec<ValueId>,
-        elseb: BlockId,
-        else_args: Vec<ValueId>,
-    },
-    JumpUnknown {
-        value: ValueId,
-    },
-    BrifUnknown {
-        cond: ValueId,
-        thenb: ValueId,
-        elseb: ValueId,
+        thenb: JumpTarget,
+        elseb: JumpTarget,
     },
     Ret {
-        size: u16,
+        adjust: u16,
     },
 }
 
 impl std::fmt::Display for Terminator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Terminator::Jump { target, args } => write!(f, "jump {target}{}", FmtList(args)),
-            Terminator::Brif {
-                cond,
-                thenb,
-                then_args,
-                elseb,
-                else_args,
-            } => write!(
-                f,
-                "brif {cond} then {thenb}{} else {elseb}{}",
-                FmtList(then_args),
-                FmtList(else_args)
-            ),
-            Terminator::JumpUnknown { value } => {
-                write!(f, "jump? {value}")
+            Terminator::Jump(t) => write!(f, "jump {t}"),
+            Terminator::Brif { cond, thenb, elseb } => {
+                write!(f, "brif {cond} then {thenb} else {elseb}",)
             }
-            Terminator::BrifUnknown { cond, thenb, elseb } => {
-                write!(f, "brif? {cond} then {thenb} else {elseb}")
-            }
-            Terminator::Ret { size } => write!(f, "ret {size}"),
+            Terminator::Ret { adjust: size } => write!(f, "ret {size}"),
         }
     }
 }
@@ -176,20 +170,49 @@ impl std::fmt::Display for Terminator {
 impl Terminator {
     pub fn visit_jumps_mut(&mut self, mut callback: impl FnMut(BlockId, &mut Vec<ValueId>)) {
         match self {
-            Terminator::Jump { target, args } => callback(*target, args),
+            Terminator::Jump(JumpTarget::Known { block, args }) => callback(*block, args),
+            Terminator::Jump(JumpTarget::Unknown { .. }) => {}
             Terminator::Brif {
                 cond: _,
                 thenb,
-                then_args,
                 elseb,
-                else_args,
             } => {
-                callback(*thenb, then_args);
-                callback(*elseb, else_args);
+                if let JumpTarget::Known { block, args } = thenb {
+                    callback(*block, args);
+                }
+
+                if let JumpTarget::Known { block, args } = elseb {
+                    callback(*block, args);
+                }
             }
-            Terminator::JumpUnknown { .. } => {}
-            Terminator::BrifUnknown { .. } => {}
             Terminator::Ret { .. } => {}
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Imm {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+}
+
+impl Imm {
+    pub fn ty(self) -> Ty {
+        match self {
+            Imm::U8(_) => Ty::U8,
+            Imm::U16(_) => Ty::U16,
+            Imm::U32(_) => Ty::U32,
+        }
+    }
+}
+
+impl std::fmt::Display for Imm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Imm::U8(x) => write!(f, "{x}.u8"),
+            Imm::U16(x) => write!(f, "{x}.u16"),
+            Imm::U32(x) => write!(f, "{x}.u32"),
         }
     }
 }

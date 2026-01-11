@@ -2,7 +2,7 @@ use iced_x86::{Mnemonic, OpKind};
 
 use crate::addr::Addr;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Reg {
     Eax,
     Ebx,
@@ -186,7 +186,7 @@ impl std::fmt::Display for Reg {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TempId(u16);
 
 impl std::fmt::Display for TempId {

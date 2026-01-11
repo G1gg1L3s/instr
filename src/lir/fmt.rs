@@ -7,6 +7,8 @@ use crate::lir::{
     value::{Value, ValueId},
 };
 
+use super::ins::Ins;
+
 pub struct FmtList<'a, T>(pub &'a [T]);
 
 impl<'a, T: std::fmt::Display> std::fmt::Display for FmtList<'a, T> {
@@ -49,7 +51,7 @@ impl<'a> Display for InsFmt<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ins = &self.fmt.func.ins[self.ins];
         match ins {
-            super::ins::Ins::BinOp { op, dst, lhs, rhs } => {
+            Ins::BinOp { op, dst, lhs, rhs } => {
                 write!(
                     f,
                     "{} = {} {} {}",
@@ -59,10 +61,11 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*rhs),
                 )
             }
-            super::ins::Ins::Uninit { dst } => {
+            Ins::Uninit { dst } => {
                 write!(f, "{} = ???", self.fmt.val(*dst),)
             }
-            super::ins::Ins::Unimpl => write!(f, "unimplemented"),
+            Ins::Const { dst, val } => write!(f, "{} = const {}", self.fmt.val(*dst), val),
+            Ins::Unimpl { dst } => write!(f, "{} = unimplemented", self.fmt.val(*dst)),
         }
     }
 }
@@ -143,6 +146,13 @@ fn fmt_block(
             maybe_fmt_alias(fmt, aliases, f, result)?;
         }
     }
+
+    if let Some(term) = &block.terminator {
+        writeln!(f, "    {}", term)?;
+    } else {
+        writeln!(f, "    <no terminator>")?;
+    }
+
     writeln!(f)?;
     Ok(())
 }

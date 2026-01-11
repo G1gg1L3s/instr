@@ -4,8 +4,10 @@ use crate::{
     addr::Addr,
     lir::{
         block::{BlockId, Blocks},
+        fmt::FuncFmt,
         ins::{Ins, InsId, Instrs},
         ins_builder::InsBuilder,
+        ty::Ty,
         value::{Value, ValueId, Values},
     },
 };
@@ -26,6 +28,10 @@ impl SsaFunction {
             blocks: Blocks::new(),
             values: Values::new(),
         }
+    }
+
+    pub fn fmt(&self) -> FuncFmt<'_> {
+        FuncFmt::new(self)
     }
 
     pub fn record_predecessor(&mut self, from: BlockId, to: BlockId) {
@@ -51,11 +57,17 @@ impl SsaFunction {
         val
     }
 
-    pub fn patch_remove_block_param(&mut self, block_id: BlockId, value: ValueId) {
-        let block = &mut self.blocks[block_id];
+    pub fn patch_remove_block_param(&mut self, block_id: BlockId, value: ValueId) -> usize {
+        let block: &mut super::block::Block = &mut self.blocks[block_id];
         let idx = block.params.iter().position(|x| *x == value).unwrap();
 
         block.params.remove(idx);
+        idx
+    }
+
+    pub fn patch_remove_block_param_and_calls(&mut self, block_id: BlockId, value: ValueId) {
+        let idx = self.patch_remove_block_param(block_id, value);
+        let block = &mut self.blocks[block_id];
 
         for pred in block.predecessors.clone() {
             let pred = &mut self.blocks[pred];
@@ -68,6 +80,8 @@ impl SsaFunction {
     }
 
     pub fn patch_add_phi_arg(&mut self, from: BlockId, to: BlockId, val: ValueId) {
+        log::trace!("+ Add phi args: {from} -> {to}: {val}");
+
         let from = &mut self.blocks[from];
         from.terminator_mut().visit_jumps_mut(|target, args| {
             if target == to {
@@ -91,7 +105,17 @@ impl SsaFunction {
         match ins {
             Ins::Uninit { dst } => Some(*dst),
             Ins::BinOp { dst, .. } => Some(*dst),
-            Ins::Unimpl => None,
+            Ins::Const { dst, .. } => Some(*dst),
+            Ins::Unimpl { dst } => Some(*dst),
+        }
+    }
+
+    pub fn val_ty(&self, val: ValueId) -> Option<Ty> {
+        let value = &self.values[val];
+        match value {
+            Value::Invalid => None,
+            Value::Temp { ty } => Some(*ty),
+            Value::Alias { .. } => self.val_ty(self.resolve_alias(val)),
         }
     }
 }

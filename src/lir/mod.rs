@@ -1,4 +1,5 @@
 pub mod block;
+pub mod flat;
 pub mod fmt;
 pub mod func;
 pub mod ins;

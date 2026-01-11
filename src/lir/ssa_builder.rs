@@ -4,6 +4,7 @@ use crate::{
     addr::Addr,
     lir::{
         block::BlockId,
+        fmt::FmtList,
         func::SsaFunction,
         ins_builder::InsBuilder,
         value::{Value, ValueId},
@@ -13,11 +14,24 @@ use crate::{
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VarId(u16);
 
+impl std::fmt::Debug for VarId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "var{}", self.0)
+    }
+}
+
+impl std::fmt::Display for VarId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self, f)
+    }
+}
+
 #[derive(Default, Debug)]
 struct BuilderBlock {
     sealed: bool,
 }
 
+#[derive(Debug)]
 pub struct SsaBuilder {
     pub func: SsaFunction,
 
@@ -41,6 +55,10 @@ impl SsaBuilder {
             variables: HashMap::new(),
             incomplete_phis: HashMap::new(),
         }
+    }
+
+    pub fn new_block(&mut self) -> BlockId {
+        self.func.blocks.add()
     }
 
     fn new_param(&mut self) -> ValueId {
@@ -73,11 +91,11 @@ impl SsaBuilder {
         self.current_block = Some(block);
     }
 
-    pub fn write_var(&mut self, block: BlockId, var: VarId, val: ValueId) {
+    pub fn write_var_in_block(&mut self, block: BlockId, var: VarId, val: ValueId) {
         self.variables.entry(var).or_default().insert(block, val);
     }
 
-    pub fn read_var(&mut self, block: BlockId, var: VarId) -> ValueId {
+    pub fn read_var_in_block(&mut self, block: BlockId, var: VarId) -> ValueId {
         if let Some(&v) = self.variables.entry(var).or_default().get(&block) {
             return v;
         }
@@ -86,24 +104,28 @@ impl SsaBuilder {
 
         if !sealed {
             let phi = self.new_param();
+            log::trace!(">> Reading {var} in {block}: block not sealed, creating phi {phi}");
             self.add_block_param(block, phi);
             self.incomplete_phis
                 .entry(block)
                 .or_default()
                 .push((var, phi));
-            self.write_var(block, var, phi);
+            self.write_var_in_block(block, var, phi);
             return phi;
         }
+        log::trace!(">> Reading {var} in {block}: block sealed");
 
         match &self.func.blocks[block].predecessors.as_slice() {
             [] => {
                 let val = self.ins().prepend_uninit_read();
-                self.write_var(block, var, val);
+                self.write_var_in_block(block, var, val);
+                log::trace!("    >> Predecessors are empty, creating uninit read {var} -> {val}");
                 return val;
             }
             [pred] => {
-                let val = self.read_var(*pred, var);
-                self.write_var(block, var, val);
+                let val = self.read_var_in_block(*pred, var);
+                self.write_var_in_block(block, var, val);
+                log::trace!("    >> One predecessor, returning {val}");
                 return val;
             }
             _ => {}
@@ -111,21 +133,30 @@ impl SsaBuilder {
 
         let phi = self.new_value();
         self.add_block_param(block, phi);
-        self.write_var(block, var, phi);
+        self.write_var_in_block(block, var, phi);
+
+        log::trace!("    >> Creating phi {phi} for {var}:");
 
         let preds = self.func.blocks[block].predecessors.clone();
         let mut values = Vec::with_capacity(preds.len());
 
         for b in &preds {
-            let val = self.read_var(*b, var);
+            let val = self.read_var_in_block(*b, var);
             let val = self.func.resolve_alias(val);
             values.push(val);
         }
 
+        log::trace!(
+            "        >> Values for phi {phi} ({var}): {}",
+            FmtList(&values)
+        );
+
         let trivial = extract_trivial_phi(phi, &values);
         if let Some(trivial) = trivial {
             self.func.set_alias(phi, trivial);
-            self.func.patch_remove_block_param(block, phi);
+            self.func.patch_remove_block_param_and_calls(block, phi);
+
+            log::trace!("    >> Phi {phi} ({var}) is trivial: {trivial}");
             return trivial;
         }
 
@@ -136,7 +167,16 @@ impl SsaBuilder {
         phi
     }
 
+    pub fn read_var(&mut self, var: VarId) -> ValueId {
+        self.read_var_in_block(self.current_block.unwrap(), var)
+    }
+
+    pub fn write_var(&mut self, var: VarId, val: ValueId) {
+        self.write_var_in_block(self.current_block.unwrap(), var, val);
+    }
+
     pub fn seal(&mut self, block: BlockId) {
+        log::trace!(">> Sealing {}", block);
         self.blocks.entry(block).or_default().sealed = true;
 
         let entries: Vec<(VarId, ValueId)> =
@@ -144,15 +184,30 @@ impl SsaBuilder {
 
         let preds = self.func.blocks[block].predecessors.clone();
         for (var, phi) in entries {
+            log::trace!("    - {}, phi: {}", var, phi);
+
             let mut values = Vec::with_capacity(preds.len());
 
             for p in &preds {
-                let val = self.read_var(*p, var);
+                let val = self.read_var_in_block(*p, var);
                 let val = self.func.resolve_alias(val);
                 values.push(val);
             }
 
+            if values.len() == 0 {
+                log::trace!(
+                    "        >> Predecessors are empty, creating uninit read {var} -> {phi}"
+                );
+                let uninit = self.func.ins(block).prepend_uninit_read();
+                self.func.patch_remove_block_param(block, phi);
+                self.func.set_alias(phi, uninit);
+                continue;
+            }
+
+            log::trace!("    >> values: {}", FmtList(&values));
+
             if let Some(trivial) = extract_trivial_phi(phi, &values) {
+                log::trace!("    >> trivial phi: {}", trivial);
                 self.func.set_alias(phi, trivial);
                 self.func.patch_remove_block_param(block, phi);
                 continue;
@@ -168,6 +223,11 @@ impl SsaBuilder {
         for block in topo_sort_blocks(&self.func.blocks) {
             self.seal(block);
         }
+    }
+
+    pub fn finalise(mut self) -> SsaFunction {
+        self.seal_all_blocks();
+        self.func
     }
 }
 
