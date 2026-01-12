@@ -1,7 +1,8 @@
 use crate::lir::{
     block::BlockId,
     func::SsaFunction,
-    ins::{BinOp, Imm, Ins, JumpTarget, Terminator},
+    ins::{BinOp, Imm, Ins, JumpTarget, MemSpace, Terminator},
+    ty::Ty,
     value::ValueId,
 };
 
@@ -82,5 +83,11 @@ impl<'a> InsBuilder<'a> {
 
     pub fn ret(&mut self, adjust: u16, args: Vec<ValueId>) {
         self.terminator(Terminator::Ret { adjust, args });
+    }
+
+    pub fn load(&mut self, ty: Ty, addr: ValueId, space: MemSpace) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty });
+        self.emit(Ins::Load { dst, addr, space });
+        dst
     }
 }

@@ -4,6 +4,7 @@ use crate::lir::{
     block::Block,
     func::SsaFunction,
     ins::{InsId, JumpTarget, Terminator},
+    ty::Ty,
     value::{Value, ValueId},
 };
 
@@ -47,6 +48,10 @@ pub struct ValuesFmt<'a> {
     vals: &'a [ValueId],
 }
 
+pub struct TyFmt {
+    ty: Option<Ty>,
+}
+
 impl<'a> Display for InsFmt<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ins = &self.fmt.func.ins[self.ins];
@@ -66,6 +71,15 @@ impl<'a> Display for InsFmt<'a> {
             }
             Ins::Const { dst, val } => write!(f, "{} = const {}", self.fmt.val(*dst), val),
             Ins::Unimpl { dst } => write!(f, "{} = unimplemented", self.fmt.val(*dst)),
+            Ins::Load { dst, addr, space } => {
+                write!(
+                    f,
+                    "{} = load.{} {space}[{}]",
+                    self.fmt.val(*dst),
+                    self.fmt.ty(*dst),
+                    self.fmt.val(*addr)
+                )
+            }
         }
     }
 }
@@ -76,6 +90,7 @@ impl<'a> Display for ValueFmt<'a> {
         match val {
             Value::Invalid => write!(f, "invalid{}", self.val.id()),
             Value::Temp { .. } | Value::Alias { .. } => write!(f, "{}", self.val),
+            Value::Mem => write!(f, "mem{}", self.val),
         }
     }
 }
@@ -96,6 +111,15 @@ impl<'a> Display for ValuesFmt<'a> {
     }
 }
 
+impl Display for TyFmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.ty {
+            Some(x) => write!(f, "{x}"),
+            None => write!(f, "???"),
+        }
+    }
+}
+
 impl<'a> FuncFmt<'a> {
     pub fn new(func: &'a SsaFunction) -> Self {
         Self { func }
@@ -111,6 +135,12 @@ impl<'a> FuncFmt<'a> {
 
     pub fn vals(self, vals: &'a [ValueId]) -> ValuesFmt<'a> {
         ValuesFmt { fmt: self, vals }
+    }
+
+    pub fn ty(self, val: ValueId) -> TyFmt {
+        TyFmt {
+            ty: self.func.val_ty(val),
+        }
     }
 }
 

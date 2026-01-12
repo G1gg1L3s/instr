@@ -6,7 +6,7 @@ use crate::{
     lir::{
         block::BlockId,
         func::SsaFunction,
-        ins::{BinOp, Imm, JumpTarget},
+        ins::{BinOp, Imm, JumpTarget, MemSpace},
         ssa_builder::{SsaBuilder, VarId},
         ty::Ty,
         value::ValueId,
@@ -133,6 +133,9 @@ pub fn func_from_flat(
                     flags,
                 } => block_state.lower_bin(op, dst, lhs, rhs, flags),
                 &flat_ir::Instr::Assign { dst, src } => block_state.lower_assign(dst, src),
+                &flat_ir::Instr::Load { dst, addr, space } => {
+                    block_state.lower_load(dst, addr, space)
+                }
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -271,6 +274,32 @@ impl<'a> BlockState<'a> {
     fn lower_assign(&mut self, dst: flat_ir::Value, src: flat_ir::Value) {
         let val = self.lower_val(src);
         self.lower_write_val(dst, val);
+    }
+
+    fn lower_load(&mut self, dst: flat_ir::Value, addr: flat_ir::Value, space: flat_ir::MemSpace) {
+        let space = match space {
+            flat_ir::MemSpace::Default => MemSpace::Default,
+            flat_ir::MemSpace::Fs => MemSpace::Fs,
+        };
+
+        let addr = self.lower_val(addr);
+        let ty = self.value_ty(dst);
+
+        let val = self.state.builder.ins().load(ty, addr, space);
+        self.lower_write_val(dst, val);
+    }
+
+    fn value_ty(&self, value: flat_ir::Value) -> Ty {
+        match value {
+            flat_ir::Value::Reg(reg) => size_to_ssa(reg.size()),
+            flat_ir::Value::Imm(imm) => size_to_ssa(imm.size()),
+            flat_ir::Value::Temp(temp_id) => {
+                let temp = self.flat_block.temp(temp_id);
+                size_to_ssa(temp.size)
+            }
+            flat_ir::Value::Flag(_) => Ty::Bool,
+            flat_ir::Value::X87StatusWord => todo!(),
+        }
     }
 }
 

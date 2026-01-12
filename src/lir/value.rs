@@ -17,6 +17,7 @@ impl ValueId {
 #[derive(Debug, Clone)]
 pub enum Value {
     Invalid,
+    Mem,
     Temp { ty: Ty },
     Alias { to: ValueId },
 }

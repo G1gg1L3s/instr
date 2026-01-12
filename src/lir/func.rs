@@ -107,6 +107,7 @@ impl SsaFunction {
             Ins::BinOp { dst, .. } => Some(*dst),
             Ins::Const { dst, .. } => Some(*dst),
             Ins::Unimpl { dst } => Some(*dst),
+            Ins::Load { dst, .. } => Some(*dst),
         }
     }
 
@@ -116,6 +117,7 @@ impl SsaFunction {
             Value::Invalid => None,
             Value::Temp { ty } => Some(*ty),
             Value::Alias { .. } => self.val_ty(self.resolve_alias(val)),
+            Value::Mem => None,
         }
     }
 }

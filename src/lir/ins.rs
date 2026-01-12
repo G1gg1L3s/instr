@@ -114,6 +114,11 @@ pub enum Ins {
     Unimpl {
         dst: ValueId,
     },
+    Load {
+        dst: ValueId,
+        addr: ValueId,
+        space: MemSpace,
+    },
 }
 
 impl std::fmt::Display for Ins {
@@ -123,6 +128,7 @@ impl std::fmt::Display for Ins {
             Ins::Uninit { dst } => write!(f, "{dst} = ???"),
             Ins::Const { dst, val } => write!(f, "{dst} = const {val}"),
             Ins::Unimpl { dst } => write!(f, "{dst} = unimplemented"),
+            Ins::Load { dst, addr, space } => write!(f, "{dst} = load {space}[{addr}]"),
         }
     }
 }
@@ -216,6 +222,21 @@ impl std::fmt::Display for Imm {
             Imm::U8(x) => write!(f, "{x}.u8"),
             Imm::U16(x) => write!(f, "{x}.u16"),
             Imm::U32(x) => write!(f, "{x}.u32"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemSpace {
+    Default,
+    Fs,
+}
+
+impl std::fmt::Display for MemSpace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MemSpace::Default => Ok(()),
+            MemSpace::Fs => write!(f, "fs:"),
         }
     }
 }

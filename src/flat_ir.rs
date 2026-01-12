@@ -256,7 +256,7 @@ impl Imm {
         }
     }
 
-    fn size(&self) -> Size {
+    pub fn size(&self) -> Size {
         match self {
             Imm::U8(_) => Size::U8,
             Imm::U16(_) => Size::U16,
