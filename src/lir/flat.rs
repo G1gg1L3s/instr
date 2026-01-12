@@ -132,6 +132,7 @@ pub fn func_from_flat(
                     rhs,
                     flags,
                 } => block_state.lower_bin(op, dst, lhs, rhs, flags),
+                &flat_ir::Instr::Assign { dst, src } => block_state.lower_assign(dst, src),
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -265,6 +266,11 @@ impl<'a> BlockState<'a> {
             let addr = self.lower_val(*target);
             JumpTarget::Unknown { addr }
         }
+    }
+
+    fn lower_assign(&mut self, dst: flat_ir::Value, src: flat_ir::Value) {
+        let val = self.lower_val(src);
+        self.lower_write_val(dst, val);
     }
 }
 
