@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 use crate::lir::{
     block::Block,
     func::SsaFunction,
-    ins::InsId,
+    ins::{InsId, JumpTarget, Terminator},
     value::{Value, ValueId},
 };
 
@@ -155,6 +155,49 @@ fn fmt_block(
 
     writeln!(f)?;
     Ok(())
+}
+
+fn fmt_terminator(
+    fmt: FuncFmt<'_>,
+    term: &Terminator,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    match term {
+        Terminator::Jump(target) => {
+            write!(f, "jump ")?;
+            format_target(fmt, f, target)?;
+            Ok(())
+        }
+        Terminator::Brif { cond, thenb, elseb } => {
+            write!(f, "brif {} then ", fmt.val(*cond))?;
+            format_target(fmt, f, thenb)?;
+            write!(f, " else ")?;
+            format_target(fmt, f, elseb)?;
+            Ok(())
+        }
+        Terminator::Ret { adjust, args } => {
+            if args.len() == 0 {
+                write!(f, "ret stack:{adjust}")
+            } else {
+                write!(f, "ret {} stack:{}", fmt.vals(args), adjust)
+            }
+        }
+    }
+}
+
+fn format_target(
+    fmt: FuncFmt<'_>,
+    f: &mut std::fmt::Formatter<'_>,
+    target: &JumpTarget,
+) -> Result<(), std::fmt::Error> {
+    Ok(match target {
+        JumpTarget::Known { block, args } => {
+            write!(f, "{}{}", block, fmt.vals(args))?;
+        }
+        JumpTarget::Unknown { addr } => {
+            write!(f, "?{}", fmt.val(*addr))?;
+        }
+    })
 }
 
 fn maybe_fmt_alias(

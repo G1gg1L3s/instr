@@ -69,6 +69,17 @@ struct BlockState<'a> {
     state: &'a mut State,
 }
 
+const REGS: [flat_ir::Reg; 8] = [
+    flat_ir::Reg::Esp,
+    flat_ir::Reg::Eax,
+    flat_ir::Reg::Ebx,
+    flat_ir::Reg::Ecx,
+    flat_ir::Reg::Edx,
+    flat_ir::Reg::Esi,
+    flat_ir::Reg::Edi,
+    flat_ir::Reg::Ebp,
+];
+
 pub fn func_from_flat(
     func: &third_cfg::Function,
     blocks: &BTreeMap<Addr, flat_ir::Block>,
@@ -88,18 +99,13 @@ pub fn func_from_flat(
         let flat_entry = func.blocks().first().unwrap();
         let entry = state.blocks[flat_entry];
         state.builder.switch(entry);
-        let regs = [
-            flat_ir::Reg::Esp,
-            flat_ir::Reg::Eax,
-            flat_ir::Reg::Ecx,
-            flat_ir::Reg::Edx,
-        ];
+
         let mut block_state = BlockState {
             flat_block: &blocks[flat_entry],
             state: &mut state,
         };
 
-        for reg in regs {
+        for reg in REGS {
             let var = block_state.get_var(FlatVar::Reg(reg));
             let param = block_state.state.builder.new_param(Ty::U32);
             block_state.state.builder.add_block_param(entry, param);
@@ -200,6 +206,18 @@ impl<'a> BlockState<'a> {
         }
     }
 
+    fn lower_ret(&mut self, stack_adjust: u16) {
+        let args = REGS
+            .iter()
+            .map(|reg| {
+                let var = self.get_var(FlatVar::Reg(*reg));
+                self.state.builder.read_var(var)
+            })
+            .collect();
+
+        self.state.builder.ins().ret(stack_adjust, args);
+    }
+
     fn lower_terminator(&mut self, terminator: &flat_ir::Terminator) {
         match terminator {
             flat_ir::Terminator::Cond {
@@ -223,7 +241,7 @@ impl<'a> BlockState<'a> {
                 addr: _,
                 stack_adjust,
             } => {
-                self.state.builder.ins().ret(*stack_adjust);
+                self.lower_ret(*stack_adjust);
             }
             flat_ir::Terminator::Fallthrough { next } => {
                 let block = self.state.blocks[&next];

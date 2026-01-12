@@ -152,6 +152,7 @@ pub enum Terminator {
     },
     Ret {
         adjust: u16,
+        args: Vec<ValueId>,
     },
 }
 
@@ -162,7 +163,9 @@ impl std::fmt::Display for Terminator {
             Terminator::Brif { cond, thenb, elseb } => {
                 write!(f, "brif {cond} then {thenb} else {elseb}",)
             }
-            Terminator::Ret { adjust: size } => write!(f, "ret {size}"),
+            Terminator::Ret { adjust, args } => {
+                write!(f, "ret stack:{} {}", adjust, FmtList(args))
+            }
         }
     }
 }

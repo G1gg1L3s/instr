@@ -80,7 +80,7 @@ impl<'a> InsBuilder<'a> {
         self.terminator(terminator);
     }
 
-    pub fn ret(&mut self, adjust: u16) {
-        self.terminator(Terminator::Ret { adjust });
+    pub fn ret(&mut self, adjust: u16, args: Vec<ValueId>) {
+        self.terminator(Terminator::Ret { adjust, args });
     }
 }
