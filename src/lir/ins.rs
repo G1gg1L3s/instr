@@ -1,10 +1,4 @@
-use crate::lir::{
-    block::BlockId,
-    flags::{Flags, FlagsGroup},
-    fmt::FmtList,
-    ty::Ty,
-    value::ValueId,
-};
+use crate::lir::{block::BlockId, fmt::FmtList, ty::Ty, value::ValueId};
 
 use std::ops::{Index, IndexMut};
 
@@ -127,6 +121,13 @@ pub enum Ins {
         mem: ValueId,
         space: MemSpace,
     },
+    Store {
+        dst_mem: ValueId,
+        src_mem: ValueId,
+        addr: ValueId,
+        value: ValueId,
+        space: MemSpace,
+    },
     Cond {
         dst: ValueId,
         flags: ValueId,
@@ -159,6 +160,13 @@ impl std::fmt::Display for Ins {
                 space,
                 mem,
             } => write!(f, "{dst} = load {mem} {space}[{addr}]"),
+            Ins::Store {
+                dst_mem,
+                src_mem,
+                addr,
+                value: src,
+                space,
+            } => write!(f, "{dst_mem} = store {src_mem} {space}[{addr}] <- {src}"),
             Ins::Cond {
                 dst,
                 flags: src,

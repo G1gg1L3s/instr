@@ -94,6 +94,24 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*addr)
                 )
             }
+            Ins::Store {
+                dst_mem,
+                src_mem,
+                addr,
+                value,
+                space,
+            } => {
+                write!(
+                    f,
+                    "{} = store.{} {} {}[{}] <- {}",
+                    self.fmt.val(*dst_mem),
+                    self.fmt.ty(*value),
+                    self.fmt.val(*src_mem),
+                    space,
+                    self.fmt.val(*addr),
+                    self.fmt.val(*value)
+                )
+            }
             Ins::Cond {
                 dst,
                 flags: src,
@@ -115,7 +133,7 @@ impl<'a> Display for ValueFmt<'a> {
             Value::Invalid => write!(f, "invalid{}", self.val.id()),
             Value::Temp { .. } | Value::Alias { .. } => write!(f, "{}", self.val),
             Value::Flags(flags) => write!(f, "{flags}#{}", self.val.id()),
-            Value::Mem => write!(f, "mem{}", self.val),
+            Value::Mem => write!(f, "mem{}", self.val.id()),
         }
     }
 }

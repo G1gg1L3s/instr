@@ -109,6 +109,7 @@ impl SsaFunction {
             Ins::Unimpl { dst } => Some(*dst),
             Ins::Load { dst, .. } => Some(*dst),
             Ins::Cond { dst, .. } => Some(*dst),
+            Ins::Store { dst_mem, .. } => Some(*dst_mem),
         }
     }
 

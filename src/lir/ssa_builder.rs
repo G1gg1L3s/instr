@@ -165,7 +165,7 @@ impl SsaBuilder {
             _ => {}
         }
 
-        let phi = self.new_value(self.vars[var].ty);
+        let phi = self.new_param(self.vars[var].ty);
         self.add_block_param(block, phi);
         self.write_var_in_block(block, var, phi);
 

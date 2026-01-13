@@ -150,6 +150,9 @@ pub fn func_from_flat(
                 &flat_ir::Instr::Load { dst, addr, space } => {
                     block_state.lower_load(dst, addr, space)
                 }
+                &flat_ir::Instr::Store { addr, src, space } => {
+                    block_state.lower_store(addr, src, space)
+                }
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -236,10 +239,10 @@ impl<'a> BlockState<'a> {
     }
 
     fn lower_ret(&mut self, stack_adjust: u16) {
-        let args = REGS
-            .iter()
-            .map(|reg| {
-                let var = self.get_var(FlatVar::Reg(*reg));
+        let args = std::iter::once(FlatVar::Mem)
+            .chain(REGS.into_iter().map(FlatVar::Reg))
+            .map(|var| {
+                let var = self.get_var(var);
                 self.state.builder.read_var(var)
             })
             .collect();
@@ -323,10 +326,7 @@ impl<'a> BlockState<'a> {
     }
 
     fn lower_load(&mut self, dst: flat_ir::Value, addr: flat_ir::Value, space: flat_ir::MemSpace) {
-        let space = match space {
-            flat_ir::MemSpace::Default => MemSpace::Default,
-            flat_ir::MemSpace::Fs => MemSpace::Fs,
-        };
+        let space = mem_space_to_ssa(space);
 
         let addr = self.lower_val(addr);
         let ty = self.value_ty(dst);
@@ -336,6 +336,18 @@ impl<'a> BlockState<'a> {
 
         let val = self.state.builder.ins().load(ty, addr, mem, space);
         self.lower_write_val(dst, val);
+    }
+
+    fn lower_store(&mut self, addr: flat_ir::Value, src: flat_ir::Value, space: flat_ir::MemSpace) {
+        let space = mem_space_to_ssa(space);
+        let addr = self.lower_val(addr);
+        let src = self.lower_val(src);
+
+        let mem_var = self.get_var(FlatVar::Mem);
+        let mem = self.state.builder.read_var(mem_var);
+
+        let mem = self.state.builder.ins().store(addr, src, mem, space);
+        self.state.builder.write_var(mem_var, mem);
     }
 
     fn value_ty(&self, value: flat_ir::Value) -> Ty {
@@ -349,6 +361,13 @@ impl<'a> BlockState<'a> {
             flat_ir::Value::Flag(_) => Ty::Bool,
             flat_ir::Value::X87StatusWord => todo!(),
         }
+    }
+}
+
+fn mem_space_to_ssa(space: flat_ir::MemSpace) -> MemSpace {
+    match space {
+        flat_ir::MemSpace::Default => MemSpace::Default,
+        flat_ir::MemSpace::Fs => MemSpace::Fs,
     }
 }
 

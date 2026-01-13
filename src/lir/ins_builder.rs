@@ -113,6 +113,24 @@ impl<'a> InsBuilder<'a> {
         dst
     }
 
+    pub fn store(
+        &mut self,
+        addr: ValueId,
+        value: ValueId,
+        mem: ValueId,
+        space: MemSpace,
+    ) -> ValueId {
+        let dst_mem = self.func.values.add(Value::Mem);
+        self.emit(Ins::Store {
+            dst_mem,
+            src_mem: mem,
+            addr,
+            value,
+            space,
+        });
+        dst_mem
+    }
+
     pub fn cond(&mut self, cond: Condition, flags: ValueId) -> ValueId {
         let dst = self.func.values.add(Value::Temp { ty: Ty::Bool });
         self.emit(Ins::Cond { dst, flags, cond });

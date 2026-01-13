@@ -97,7 +97,7 @@ fn main() {
 
     let functions = third_cfg::derive_functions(&blocks, binary.entry_point);
 
-    for func in [0x4012c0, 0x4027e0] {
+    for func in [0x4012c0, 0x4027e0, 0x4027c0] {
         let func = functions.iter().find(|f| f.addr() == Addr(func)).unwrap();
         let ssa_func = lir::flat::func_from_flat(func, &blocks);
 
