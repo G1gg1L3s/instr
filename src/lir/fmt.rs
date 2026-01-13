@@ -215,7 +215,7 @@ fn fmt_block(
 
     for ins in &block.ins {
         writeln!(f, "    {}", fmt.ins(*ins))?;
-        if let Some(result) = fmt.func.instr_result(*ins) {
+        for result in fmt.func.instr_result(*ins) {
             maybe_fmt_alias(fmt, aliases, f, result)?;
         }
     }

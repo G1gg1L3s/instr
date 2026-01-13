@@ -100,17 +100,25 @@ impl SsaFunction {
         res
     }
 
-    pub fn instr_result(&self, ins: InsId) -> Option<ValueId> {
+    pub fn instr_result(&self, ins: InsId) -> heapless::Vec<ValueId, 16> {
+        let mut res = heapless::Vec::<ValueId, 16>::new();
         let ins = &self.ins[ins];
         match ins {
-            Ins::Uninit { dst } => Some(*dst),
-            Ins::BinOp { dst, .. } => Some(*dst),
-            Ins::Const { dst, .. } => Some(*dst),
-            Ins::Unimpl { dst } => Some(*dst),
-            Ins::Load { dst, .. } => Some(*dst),
-            Ins::Cond { dst, .. } => Some(*dst),
-            Ins::Store { dst_mem, .. } => Some(*dst_mem),
+            Ins::Uninit { dst } => res.push(*dst).unwrap(),
+            Ins::BinOp { dst, flags, .. } => {
+                res.push(*dst).unwrap();
+                if let Some(flags) = flags {
+                    res.push(*flags).unwrap()
+                }
+            }
+            Ins::Const { dst, .. } => res.push(*dst).unwrap(),
+            Ins::Unimpl { dst } => res.push(*dst).unwrap(),
+            Ins::Load { dst, .. } => res.push(*dst).unwrap(),
+            Ins::Cond { dst, .. } => res.push(*dst).unwrap(),
+            Ins::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
         }
+
+        res
     }
 
     pub fn val_ty(&self, val: ValueId) -> Option<Ty> {
