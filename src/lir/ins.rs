@@ -124,6 +124,7 @@ pub enum Ins {
     Load {
         dst: ValueId,
         addr: ValueId,
+        mem: ValueId,
         space: MemSpace,
     },
     Cond {
@@ -152,7 +153,12 @@ impl std::fmt::Display for Ins {
             Ins::Uninit { dst } => write!(f, "{dst} = ???"),
             Ins::Const { dst, val } => write!(f, "{dst} = const {val}"),
             Ins::Unimpl { dst } => write!(f, "{dst} = unimplemented"),
-            Ins::Load { dst, addr, space } => write!(f, "{dst} = load {space}[{addr}]"),
+            Ins::Load {
+                dst,
+                addr,
+                space,
+                mem,
+            } => write!(f, "{dst} = load {mem} {space}[{addr}]"),
             Ins::Cond {
                 dst,
                 flags: src,

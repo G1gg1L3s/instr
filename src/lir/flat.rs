@@ -20,6 +20,7 @@ enum FlatVar {
     Reg(flat_ir::Reg),
     Temp(flat_ir::TempId),
     Flags,
+    Mem,
 }
 
 impl FlatVar {
@@ -31,6 +32,7 @@ impl FlatVar {
                 size_to_ssa(temp.size)
             }
             FlatVar::Flags => Ty::Flags,
+            FlatVar::Mem => Ty::Mem,
         }
     }
 }
@@ -57,6 +59,7 @@ impl std::fmt::Display for FlatVar {
             FlatVar::Reg(reg) => write!(f, "{}", reg),
             FlatVar::Temp(temp_id) => write!(f, "{}", temp_id),
             FlatVar::Flags => write!(f, "flags"),
+            FlatVar::Mem => write!(f, "mem"),
         }
     }
 }
@@ -108,6 +111,13 @@ pub fn func_from_flat(
             flat_block: &blocks[flat_entry],
             state: &mut state,
         };
+
+        {
+            let param = block_state.state.builder.new_param(Ty::Mem);
+            let var = block_state.get_var(FlatVar::Mem);
+            block_state.state.builder.add_block_param(entry, param);
+            block_state.state.builder.write_var(var, param);
+        }
 
         for reg in REGS {
             let var = block_state.get_var(FlatVar::Reg(reg));
@@ -321,7 +331,10 @@ impl<'a> BlockState<'a> {
         let addr = self.lower_val(addr);
         let ty = self.value_ty(dst);
 
-        let val = self.state.builder.ins().load(ty, addr, space);
+        let mem = self.get_var(FlatVar::Mem);
+        let mem = self.state.builder.read_var(mem);
+
+        let val = self.state.builder.ins().load(ty, addr, mem, space);
         self.lower_write_val(dst, val);
     }
 

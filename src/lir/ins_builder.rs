@@ -102,9 +102,14 @@ impl<'a> InsBuilder<'a> {
         self.terminator(Terminator::Ret { adjust, args });
     }
 
-    pub fn load(&mut self, ty: Ty, addr: ValueId, space: MemSpace) -> ValueId {
+    pub fn load(&mut self, ty: Ty, addr: ValueId, mem: ValueId, space: MemSpace) -> ValueId {
         let dst = self.func.values.add(Value::Temp { ty });
-        self.emit(Ins::Load { dst, addr, space });
+        self.emit(Ins::Load {
+            dst,
+            addr,
+            mem,
+            space,
+        });
         dst
     }
 

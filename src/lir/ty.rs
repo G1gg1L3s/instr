@@ -15,6 +15,8 @@ pub enum Ty {
 
     F32,
     F64,
+
+    Mem,
 }
 
 impl std::fmt::Display for Ty {
@@ -32,6 +34,7 @@ impl std::fmt::Display for Ty {
             Ty::I64 => write!(f, "i64"),
             Ty::F32 => write!(f, "f32"),
             Ty::F64 => write!(f, "f64"),
+            Ty::Mem => write!(f, "mem"),
         }
     }
 }

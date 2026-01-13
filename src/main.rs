@@ -97,17 +97,16 @@ fn main() {
 
     let functions = third_cfg::derive_functions(&blocks, binary.entry_point);
 
-    let func = functions
-        .iter()
-        .find(|f| f.addr() == Addr(0x4027e0))
-        .unwrap();
-    let ssa_func = lir::flat::func_from_flat(func, &blocks);
+    for func in [0x4012c0, 0x4027e0] {
+        let func = functions.iter().find(|f| f.addr() == Addr(func)).unwrap();
+        let ssa_func = lir::flat::func_from_flat(func, &blocks);
 
-    println!(
-        "------------------------------ SSA {} ------------------------------",
-        func.addr()
-    );
-    println!("{}", ssa_func.fmt());
+        println!(
+            "------------------------------ SSA {} ------------------------------",
+            func.addr()
+        );
+        println!("{}", ssa_func.fmt());
+    }
 
     println!(".funcs: # Detected {} functions", functions.len());
     for func in functions {

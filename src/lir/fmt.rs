@@ -79,12 +79,18 @@ impl<'a> Display for InsFmt<'a> {
             }
             Ins::Const { dst, val } => write!(f, "{} = const {}", self.fmt.val(*dst), val),
             Ins::Unimpl { dst } => write!(f, "{} = unimplemented", self.fmt.val(*dst)),
-            Ins::Load { dst, addr, space } => {
+            Ins::Load {
+                dst,
+                addr,
+                mem,
+                space,
+            } => {
                 write!(
                     f,
-                    "{} = load.{} {space}[{}]",
+                    "{} = load.{} {} {space}[{}]",
                     self.fmt.val(*dst),
                     self.fmt.ty(*dst),
+                    self.fmt.val(*mem),
                     self.fmt.val(*addr)
                 )
             }
@@ -197,7 +203,9 @@ fn fmt_block(
     }
 
     if let Some(term) = &block.terminator {
-        writeln!(f, "    {}", term)?;
+        write!(f, "    ")?;
+        fmt_terminator(fmt, term, f)?;
+        writeln!(f)?;
     } else {
         writeln!(f, "    <no terminator>")?;
     }
