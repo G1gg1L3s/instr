@@ -126,6 +126,11 @@ pub enum Ins {
         addr: ValueId,
         space: MemSpace,
     },
+    Cond {
+        dst: ValueId,
+        flags: ValueId,
+        cond: Condition,
+    },
 }
 
 impl std::fmt::Display for Ins {
@@ -148,6 +153,11 @@ impl std::fmt::Display for Ins {
             Ins::Const { dst, val } => write!(f, "{dst} = const {val}"),
             Ins::Unimpl { dst } => write!(f, "{dst} = unimplemented"),
             Ins::Load { dst, addr, space } => write!(f, "{dst} = load {space}[{addr}]"),
+            Ins::Cond {
+                dst,
+                flags: src,
+                cond,
+            } => write!(f, "{dst} = cond({cond}) {src}"),
         }
     }
 }
@@ -257,5 +267,49 @@ impl std::fmt::Display for MemSpace {
             MemSpace::Default => Ok(()),
             MemSpace::Fs => write!(f, "fs:"),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Condition {
+    Equal,
+    NotEqual,
+    SignLess,
+    UnsignedLess,
+    SignedLessEqual,
+    UnsignedLessEqual,
+    SignedGreaterEqual,
+    UnsignedGreaterEqual,
+    SignedGreater,
+    UnsignedGreater,
+    Negative,
+    Positive,
+    Overflow,
+    NoOverflow,
+    ParityEven,
+    ParityOdd,
+}
+
+impl std::fmt::Display for Condition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let literal = match self {
+            Condition::Equal => "==",
+            Condition::NotEqual => "!=",
+            Condition::SignLess => "s<",
+            Condition::UnsignedLess => "u<",
+            Condition::SignedLessEqual => "s<=",
+            Condition::UnsignedLessEqual => "u<=",
+            Condition::SignedGreaterEqual => "s>=",
+            Condition::UnsignedGreaterEqual => "u>=",
+            Condition::SignedGreater => "s>",
+            Condition::UnsignedGreater => "u>",
+            Condition::Negative => "-",
+            Condition::Positive => "+",
+            Condition::Overflow => "overflow",
+            Condition::NoOverflow => "!overflow",
+            Condition::ParityEven => "parity_even",
+            Condition::ParityOdd => "parity_odd",
+        };
+        write!(f, "{literal}")
     }
 }

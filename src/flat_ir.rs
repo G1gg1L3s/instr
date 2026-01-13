@@ -150,6 +150,23 @@ impl std::fmt::Display for Condition {
     }
 }
 
+impl Condition {
+    pub fn required_flags(self) -> Flagx {
+        use Condition as C;
+
+        match self {
+            C::Equal | C::NotEqual => Flagx::ZERO,
+            C::UnsignedLess | C::UnsignedGreaterEqual => Flagx::CARRY,
+            C::UnsignedLessEqual | C::UnsignedGreater => Flagx::CARRY | Flagx::ZERO,
+            C::SignLess | C::SignedGreaterEqual => Flagx::SIGN | Flagx::OVERFLOW,
+            C::SignedLessEqual | C::SignedGreater => Flagx::ZERO | Flagx::SIGN | Flagx::OVERFLOW,
+            C::Negative | C::Positive => Flagx::SIGN,
+            C::Overflow | C::NoOverflow => Flagx::OVERFLOW,
+            C::ParityEven | C::ParityOdd => Flagx::PARITY,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Flag {
     /// Carry flag

@@ -108,6 +108,7 @@ impl SsaFunction {
             Ins::Const { dst, .. } => Some(*dst),
             Ins::Unimpl { dst } => Some(*dst),
             Ins::Load { dst, .. } => Some(*dst),
+            Ins::Cond { dst, .. } => Some(*dst),
         }
     }
 
@@ -120,5 +121,9 @@ impl SsaFunction {
             Value::Flags(_) => Some(Ty::Flags),
             Value::Mem => None,
         }
+    }
+
+    pub fn val(&self, val: ValueId) -> &Value {
+        &self.values[val]
     }
 }

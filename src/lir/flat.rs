@@ -7,10 +7,10 @@ use crate::{
         block::BlockId,
         flags::{Flags, FlagsGroup},
         func::SsaFunction,
-        ins::{BinOp, Imm, JumpTarget, MemSpace},
+        ins::{BinOp, Condition, Imm, JumpTarget, MemSpace},
         ssa_builder::{SsaBuilder, VarId},
         ty::Ty,
-        value::ValueId,
+        value::{Value, ValueId},
     },
     third_cfg,
 };
@@ -201,16 +201,16 @@ impl<'a> BlockState<'a> {
         dst: Option<flat_ir::Value>,
         lhs: flat_ir::Value,
         rhs: flat_ir::Value,
-        flags: flat_ir::FlagxGroup,
+        group: flat_ir::FlagxGroup,
     ) {
         let lhs = self.lower_val(lhs);
         let rhs = self.lower_val(rhs);
         let op = op_to_ssa(op);
 
-        let flags = if flags.is_empty() {
+        let flags = if group.is_empty() {
             None
         } else {
-            Some(flags_to_ssa(flags))
+            Some(FlagsGroup::new(flags_to_ssa(group.flags())))
         };
 
         let (res, flags) = self.state.builder.ins().bin(op, lhs, rhs, flags);
@@ -237,15 +237,36 @@ impl<'a> BlockState<'a> {
         self.state.builder.ins().ret(stack_adjust, args);
     }
 
+    fn lower_condition(&mut self, cond: flat_ir::Condition) -> ValueId {
+        let required = flags_to_ssa(cond.required_flags());
+        let flags = self.get_var(FlatVar::Flags);
+        let flags = self.state.builder.read_var(flags);
+
+        let value = self.state.builder.func.val(flags);
+        let Value::Flags(group) = value else {
+            panic!("invalid value {flags}: expected flags, found: {value:?}")
+        };
+
+        if !group.flags().contains(required) {
+            panic!(
+                "required flags: {:?}, but only provided: {:?}",
+                required, group
+            );
+        }
+
+        let cond = cond_to_ssa(cond);
+        self.state.builder.ins().cond(cond, flags)
+    }
+
     fn lower_terminator(&mut self, terminator: &flat_ir::Terminator) {
         match terminator {
             flat_ir::Terminator::Cond {
                 addr: _,
-                cond: _,
+                cond,
                 then_bb,
                 else_bb,
             } => {
-                let cond = self.state.builder.ins().unimplemented();
+                let cond = self.lower_condition(*cond);
 
                 let thenb = self.lower_branch_target(then_bb);
                 let elseb = self.lower_branch_target(else_bb);
@@ -318,9 +339,28 @@ impl<'a> BlockState<'a> {
     }
 }
 
-fn flags_to_ssa(group: flat_ir::FlagxGroup) -> FlagsGroup {
-    let flags = group.flags();
+fn cond_to_ssa(cond: flat_ir::Condition) -> Condition {
+    match cond {
+        flat_ir::Condition::Equal => Condition::Equal,
+        flat_ir::Condition::NotEqual => Condition::NotEqual,
+        flat_ir::Condition::SignLess => Condition::SignLess,
+        flat_ir::Condition::UnsignedLess => Condition::UnsignedLess,
+        flat_ir::Condition::SignedLessEqual => Condition::SignedLessEqual,
+        flat_ir::Condition::UnsignedLessEqual => Condition::UnsignedLessEqual,
+        flat_ir::Condition::SignedGreaterEqual => Condition::SignedGreaterEqual,
+        flat_ir::Condition::UnsignedGreaterEqual => Condition::UnsignedGreaterEqual,
+        flat_ir::Condition::SignedGreater => Condition::SignedGreater,
+        flat_ir::Condition::UnsignedGreater => Condition::UnsignedGreater,
+        flat_ir::Condition::Negative => Condition::Negative,
+        flat_ir::Condition::Positive => Condition::Positive,
+        flat_ir::Condition::Overflow => Condition::Overflow,
+        flat_ir::Condition::NoOverflow => Condition::NoOverflow,
+        flat_ir::Condition::ParityEven => Condition::ParityEven,
+        flat_ir::Condition::ParityOdd => Condition::ParityOdd,
+    }
+}
 
+fn flags_to_ssa(flags: flat_ir::Flagx) -> Flags {
     let mut res = Flags::empty();
 
     if flags.contains(Flagx::CARRY) {
@@ -351,7 +391,7 @@ fn flags_to_ssa(group: flat_ir::FlagxGroup) -> FlagsGroup {
         res.insert(Flags::C3);
     }
 
-    FlagsGroup::new(res)
+    res
 }
 
 fn imm_to_ssa(imm: flat_ir::Imm) -> Imm {

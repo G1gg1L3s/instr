@@ -88,6 +88,16 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*addr)
                 )
             }
+            Ins::Cond {
+                dst,
+                flags: src,
+                cond,
+            } => write!(
+                f,
+                "{} = cond({cond}) {}",
+                self.fmt.val(*dst),
+                self.fmt.val(*src)
+            ),
         }
     }
 }

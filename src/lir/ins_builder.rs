@@ -2,7 +2,7 @@ use crate::lir::{
     block::BlockId,
     flags::FlagsGroup,
     func::SsaFunction,
-    ins::{BinOp, Imm, Ins, JumpTarget, MemSpace, Terminator},
+    ins::{BinOp, Condition, Imm, Ins, JumpTarget, MemSpace, Terminator},
     ty::Ty,
     value::ValueId,
 };
@@ -105,6 +105,12 @@ impl<'a> InsBuilder<'a> {
     pub fn load(&mut self, ty: Ty, addr: ValueId, space: MemSpace) -> ValueId {
         let dst = self.func.values.add(Value::Temp { ty });
         self.emit(Ins::Load { dst, addr, space });
+        dst
+    }
+
+    pub fn cond(&mut self, cond: Condition, flags: ValueId) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty: Ty::Bool });
+        self.emit(Ins::Cond { dst, flags, cond });
         dst
     }
 }
