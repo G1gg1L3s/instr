@@ -100,6 +100,10 @@ impl FlagxGroup {
     pub fn is_empty(self) -> bool {
         self.0.is_empty()
     }
+
+    pub fn flags(self) -> Flagx {
+        self.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

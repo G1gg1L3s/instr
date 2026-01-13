@@ -19,6 +19,7 @@ use crate::{
 enum FlatVar {
     Reg(flat_ir::Reg),
     Temp(flat_ir::TempId),
+    Flags,
 }
 
 impl FlatVar {
@@ -29,6 +30,7 @@ impl FlatVar {
                 let temp = block.temp(temp_id);
                 size_to_ssa(temp.size)
             }
+            FlatVar::Flags => Ty::Flags,
         }
     }
 }
@@ -54,6 +56,7 @@ impl std::fmt::Display for FlatVar {
         match self {
             FlatVar::Reg(reg) => write!(f, "{}", reg),
             FlatVar::Temp(temp_id) => write!(f, "{}", temp_id),
+            FlatVar::Flags => write!(f, "flags"),
         }
     }
 }
@@ -210,10 +213,15 @@ impl<'a> BlockState<'a> {
             Some(flags_to_ssa(flags))
         };
 
-        let res = self.state.builder.ins().bin(op, lhs, rhs, flags);
+        let (res, flags) = self.state.builder.ins().bin(op, lhs, rhs, flags);
 
         if let Some(dst) = dst {
             self.lower_write_val(dst, res)
+        }
+
+        if let Some(flags) = flags {
+            let var = self.get_var(FlatVar::Flags);
+            self.state.builder.write_var(var, flags);
         }
     }
 

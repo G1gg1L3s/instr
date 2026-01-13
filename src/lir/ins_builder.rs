@@ -39,7 +39,7 @@ impl<'a> InsBuilder<'a> {
         lhs: ValueId,
         rhs: ValueId,
         flags: Option<FlagsGroup>,
-    ) -> ValueId {
+    ) -> (ValueId, Option<ValueId>) {
         let dst = if let Some(ty) = self.func.val_ty(lhs) {
             self.func.values.add(Value::Temp { ty })
         } else {
@@ -55,7 +55,8 @@ impl<'a> InsBuilder<'a> {
             rhs,
             flags,
         });
-        dst
+
+        (dst, flags)
     }
 
     pub fn unimplemented(&mut self) -> ValueId {
