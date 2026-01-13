@@ -1,4 +1,5 @@
 pub mod block;
+pub mod flags;
 pub mod flat;
 pub mod fmt;
 pub mod func;

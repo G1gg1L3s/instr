@@ -56,15 +56,23 @@ impl<'a> Display for InsFmt<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ins = &self.fmt.func.ins[self.ins];
         match ins {
-            Ins::BinOp { op, dst, lhs, rhs } => {
-                write!(
-                    f,
-                    "{} = {} {} {}",
-                    self.fmt.val(*dst),
-                    self.fmt.val(*lhs),
-                    op,
-                    self.fmt.val(*rhs),
-                )
+            Ins::BinOp {
+                op,
+                dst,
+                lhs,
+                rhs,
+                flags,
+            } => {
+                let dst = self.fmt.val(*dst);
+                let lhs = self.fmt.val(*lhs);
+                let rhs = self.fmt.val(*rhs);
+
+                if let Some(flags) = flags {
+                    let flags = self.fmt.val(*flags);
+                    write!(f, "{dst}, {flags} = {lhs} {op} {rhs}")
+                } else {
+                    write!(f, "{dst} = {lhs} {op} {rhs}")
+                }
             }
             Ins::Uninit { dst } => {
                 write!(f, "{} = ???", self.fmt.val(*dst),)
@@ -90,6 +98,7 @@ impl<'a> Display for ValueFmt<'a> {
         match val {
             Value::Invalid => write!(f, "invalid{}", self.val.id()),
             Value::Temp { .. } | Value::Alias { .. } => write!(f, "{}", self.val),
+            Value::Flags(flags) => write!(f, "{flags}#{}", self.val.id()),
             Value::Mem => write!(f, "mem{}", self.val),
         }
     }

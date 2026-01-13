@@ -1,4 +1,10 @@
-use crate::lir::{block::BlockId, fmt::FmtList, ty::Ty, value::ValueId};
+use crate::lir::{
+    block::BlockId,
+    flags::{Flags, FlagsGroup},
+    fmt::FmtList,
+    ty::Ty,
+    value::ValueId,
+};
 
 use std::ops::{Index, IndexMut};
 
@@ -103,6 +109,7 @@ pub enum Ins {
         dst: ValueId,
         lhs: ValueId,
         rhs: ValueId,
+        flags: Option<ValueId>,
     },
     Const {
         dst: ValueId,
@@ -124,7 +131,19 @@ pub enum Ins {
 impl std::fmt::Display for Ins {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Ins::BinOp { op, dst, lhs, rhs } => write!(f, "{dst} = {lhs} {op} {rhs}"),
+            Ins::BinOp {
+                op,
+                dst,
+                lhs,
+                rhs,
+                flags,
+            } => {
+                if let Some(flags) = flags {
+                    write!(f, "{dst}, {flags} = {lhs} {op} {rhs}")
+                } else {
+                    write!(f, "{dst} = {lhs} {op} {rhs}")
+                }
+            }
             Ins::Uninit { dst } => write!(f, "{dst} = ???"),
             Ins::Const { dst, val } => write!(f, "{dst} = const {val}"),
             Ins::Unimpl { dst } => write!(f, "{dst} = unimplemented"),

@@ -1,5 +1,6 @@
 use crate::lir::{
     block::BlockId,
+    flags::FlagsGroup,
     func::SsaFunction,
     ins::{BinOp, Imm, Ins, JumpTarget, MemSpace, Terminator},
     ty::Ty,
@@ -32,13 +33,28 @@ impl<'a> InsBuilder<'a> {
         dst
     }
 
-    pub fn bin(&mut self, op: BinOp, lhs: ValueId, rhs: ValueId) -> ValueId {
+    pub fn bin(
+        &mut self,
+        op: BinOp,
+        lhs: ValueId,
+        rhs: ValueId,
+        flags: Option<FlagsGroup>,
+    ) -> ValueId {
         let dst = if let Some(ty) = self.func.val_ty(lhs) {
             self.func.values.add(Value::Temp { ty })
         } else {
             self.func.values.add(Value::Invalid)
         };
-        self.emit(Ins::BinOp { op, dst, lhs, rhs });
+
+        let flags = flags.map(|f| self.func.values.add(Value::Flags(f)));
+
+        self.emit(Ins::BinOp {
+            op,
+            dst,
+            lhs,
+            rhs,
+            flags,
+        });
         dst
     }
 

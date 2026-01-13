@@ -117,6 +117,7 @@ impl SsaFunction {
             Value::Invalid => None,
             Value::Temp { ty } => Some(*ty),
             Value::Alias { .. } => self.val_ty(self.resolve_alias(val)),
+            Value::Flags(_) => None,
             Value::Mem => None,
         }
     }

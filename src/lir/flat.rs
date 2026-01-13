@@ -2,9 +2,10 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     addr::Addr,
-    flat_ir::{self, AnnotatedInstr},
+    flat_ir::{self, AnnotatedInstr, Flagx},
     lir::{
         block::BlockId,
+        flags::{Flags, FlagsGroup},
         func::SsaFunction,
         ins::{BinOp, Imm, JumpTarget, MemSpace},
         ssa_builder::{SsaBuilder, VarId},
@@ -197,13 +198,19 @@ impl<'a> BlockState<'a> {
         dst: Option<flat_ir::Value>,
         lhs: flat_ir::Value,
         rhs: flat_ir::Value,
-        _flags: flat_ir::FlagxGroup,
+        flags: flat_ir::FlagxGroup,
     ) {
         let lhs = self.lower_val(lhs);
         let rhs = self.lower_val(rhs);
         let op = op_to_ssa(op);
 
-        let res = self.state.builder.ins().bin(op, lhs, rhs);
+        let flags = if flags.is_empty() {
+            None
+        } else {
+            Some(flags_to_ssa(flags))
+        };
+
+        let res = self.state.builder.ins().bin(op, lhs, rhs, flags);
 
         if let Some(dst) = dst {
             self.lower_write_val(dst, res)
@@ -301,6 +308,42 @@ impl<'a> BlockState<'a> {
             flat_ir::Value::X87StatusWord => todo!(),
         }
     }
+}
+
+fn flags_to_ssa(group: flat_ir::FlagxGroup) -> FlagsGroup {
+    let flags = group.flags();
+
+    let mut res = Flags::empty();
+
+    if flags.contains(Flagx::CARRY) {
+        res.insert(Flags::CARRY);
+    }
+    if flags.contains(Flagx::ZERO) {
+        res.insert(Flags::ZERO);
+    }
+    if flags.contains(Flagx::SIGN) {
+        res.insert(Flags::SIGN);
+    }
+    if flags.contains(Flagx::OVERFLOW) {
+        res.insert(Flags::OVERFLOW);
+    }
+    if flags.contains(Flagx::PARITY) {
+        res.insert(Flags::PARITY);
+    }
+    if flags.contains(Flagx::C0) {
+        res.insert(Flags::C0);
+    }
+    if flags.contains(Flagx::C1) {
+        res.insert(Flags::C1);
+    }
+    if flags.contains(Flagx::C2) {
+        res.insert(Flags::C2);
+    }
+    if flags.contains(Flagx::C3) {
+        res.insert(Flags::C3);
+    }
+
+    FlagsGroup::new(res)
 }
 
 fn imm_to_ssa(imm: flat_ir::Imm) -> Imm {
