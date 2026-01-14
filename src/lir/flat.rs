@@ -313,10 +313,15 @@ impl<'a> BlockState<'a> {
 
     fn lower_branch_target(&mut self, target: &flat_ir::Value) -> JumpTarget {
         if let Some(addr) = as_u32_addr(target) {
-            let block = self.state.blocks[&addr];
-            JumpTarget::Known {
-                block,
-                args: vec![],
+            if let Some(block) = self.state.blocks.get(&addr) {
+                JumpTarget::Known {
+                    block: *block,
+                    args: vec![],
+                }
+            } else {
+                // TODO: this is actually a tail call
+                let addr = self.lower_val(*target);
+                JumpTarget::Unknown { addr }
             }
         } else {
             let addr = self.lower_val(*target);
