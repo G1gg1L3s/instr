@@ -22,9 +22,14 @@ impl Instrs {
         InsId(id)
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = InsId> {
+    pub fn keys(&self) -> impl Iterator<Item = InsId> + use<> {
         let max = self.0.len().try_into().unwrap();
         InsKeys(0..max)
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (InsId, &mut Ins)> {
+        let keys = self.keys();
+        keys.zip(self.0.iter_mut())
     }
 }
 
@@ -142,6 +147,79 @@ pub enum Ins {
         args: Vec<ValueId>,
     },
 }
+impl Ins {
+    pub fn patch_replace_value(&mut self, from: ValueId, to: ValueId) {
+        self.visit_values_mut(|val| {
+            if *val == from {
+                *val = to;
+            }
+        });
+    }
+
+    pub fn visit_values_mut(&mut self, mut callback: impl FnMut(&mut ValueId)) {
+        match self {
+            Ins::BinOp {
+                op: _,
+                dst,
+                lhs,
+                rhs,
+                flags,
+            } => {
+                callback(dst);
+                callback(lhs);
+                callback(rhs);
+                flags.as_mut().map(callback);
+            }
+            Ins::Const { dst, val: _ } => callback(dst),
+            Ins::Uninit { dst } => callback(dst),
+            Ins::Unimpl { dst } => callback(dst),
+            Ins::Load {
+                dst,
+                addr,
+                mem,
+                space: _,
+            } => {
+                callback(dst);
+                callback(addr);
+                callback(mem);
+            }
+            Ins::Store {
+                dst_mem,
+                src_mem,
+                addr,
+                value,
+                space: _,
+            } => {
+                callback(dst_mem);
+                callback(src_mem);
+                callback(addr);
+                callback(value);
+            }
+            Ins::Cond {
+                dst,
+                flags,
+                cond: _,
+            } => {
+                callback(dst);
+                callback(flags);
+            }
+            Ins::Call {
+                result,
+                target,
+                args,
+            } => {
+                for arg in result.iter_mut().chain(args) {
+                    callback(arg);
+                }
+
+                match target {
+                    CallTarget::Known { addr: _ } => {}
+                    CallTarget::Unknown { addr } => callback(addr),
+                }
+            }
+        }
+    }
+}
 
 impl std::fmt::Display for Ins {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -250,6 +328,31 @@ impl std::fmt::Display for Terminator {
 }
 
 impl Terminator {
+    fn visit_target(jp: &mut JumpTarget, mut callback: impl FnMut(&mut ValueId)) {
+        match jp {
+            JumpTarget::Known { block: _, args } => {
+                args.iter_mut().map(callback).count();
+            }
+            JumpTarget::Unknown { addr } => callback(addr),
+        }
+    }
+
+    pub fn visit_values_mut(&mut self, mut callback: impl FnMut(&mut ValueId)) {
+        match self {
+            Terminator::Jump(jp) => {
+                Self::visit_target(jp, callback);
+            }
+            Terminator::Brif { cond, thenb, elseb } => {
+                callback(cond);
+                Self::visit_target(thenb, &mut callback);
+                Self::visit_target(elseb, &mut callback);
+            }
+            Terminator::Ret { adjust: _, args } => {
+                args.iter_mut().map(callback).count();
+            }
+        }
+    }
+
     pub fn visit_jumps_mut(&mut self, mut callback: impl FnMut(BlockId, &mut Vec<ValueId>)) {
         match self {
             Terminator::Jump(JumpTarget::Known { block, args }) => callback(*block, args),

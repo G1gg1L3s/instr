@@ -47,13 +47,18 @@ impl Blocks {
         BlockId(id)
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = BlockId> {
+    pub fn keys(&self) -> impl Iterator<Item = BlockId> + use<> {
         let max = self.0.len().try_into().unwrap();
         BlockKeys(0..max)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (BlockId, &Block)> {
         self.keys().zip(self.0.iter())
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (BlockId, &mut Block)> {
+        let keys = self.keys();
+        keys.zip(self.0.iter_mut())
     }
 }
 

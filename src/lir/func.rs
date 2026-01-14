@@ -137,4 +137,37 @@ impl SsaFunction {
         let val = self.resolve_alias(val);
         &self.values[val]
     }
+
+    pub fn patch_resolve_aliases(&mut self) -> bool {
+        let mut patched = false;
+        for id in self.values.keys() {
+            let resolved = self.resolve_alias(id);
+
+            if resolved != id {
+                patched = true;
+                self.patch_replace_value(id, resolved);
+                self.values[id] = Value::Invalid;
+            }
+        }
+        patched
+    }
+
+    fn patch_replace_value(&mut self, from: ValueId, to: ValueId) {
+        for (_, ins) in self.ins.iter_mut() {
+            ins.patch_replace_value(from, to);
+        }
+
+        for (_, block) in self.blocks.iter_mut() {
+            for arg in &mut block.params {
+                if *arg == from {
+                    *arg = to;
+                }
+            }
+            block.terminator_mut().visit_values_mut(|val| {
+                if *val == from {
+                    *val = to;
+                }
+            });
+        }
+    }
 }

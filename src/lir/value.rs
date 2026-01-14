@@ -33,7 +33,7 @@ impl Values {
         ValueId(id)
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = ValueId> {
+    pub fn keys(&self) -> impl Iterator<Item = ValueId> + use<> {
         let max = self.0.len().try_into().unwrap();
         ValueKeys(0..max)
     }
