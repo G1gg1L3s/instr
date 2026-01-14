@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use crate::lir::{
     block::Block,
+    flags::FlagsGroup,
     func::SsaFunction,
     ins::{InsId, JumpTarget, Terminator},
     ty::Ty,
@@ -142,6 +143,9 @@ impl<'a> Display for ValueFmt<'a> {
         let val = &self.fmt.func.values[self.val];
         match val {
             Value::Invalid => write!(f, "invalid{}", self.val.id()),
+            Value::Temp {
+                ty: Ty::Flags(flags),
+            } => write!(f, "{}#{}", FlagsGroup::new(*flags), self.val.id()),
             Value::Temp { .. } | Value::Alias { .. } => write!(f, "{}", self.val),
             Value::Mem => write!(f, "mem{}", self.val.id()),
         }
