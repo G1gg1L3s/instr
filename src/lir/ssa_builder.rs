@@ -95,8 +95,8 @@ impl SsaBuilder {
         }
     }
 
-    pub fn new_block(&mut self) -> BlockId {
-        self.func.blocks.add()
+    pub fn new_block(&mut self, addr: Addr) -> BlockId {
+        self.func.blocks.add(addr)
     }
 
     pub fn new_param(&mut self, ty: Ty) -> ValueId {
@@ -313,7 +313,7 @@ fn topo_sort_blocks(blocks: &super::block::Blocks) -> Vec<BlockId> {
     result
 }
 
-fn extract_trivial_phi(phi: ValueId, values: &[ValueId]) -> Option<ValueId> {
+pub fn extract_trivial_phi(phi: ValueId, values: &[ValueId]) -> Option<ValueId> {
     let mut candidate = None;
 
     for &v in values {

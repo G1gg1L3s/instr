@@ -221,7 +221,13 @@ fn fmt_block(
     block: &Block,
     f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
-    writeln!(f, "{}{}:", block.id, fmt.vals(&block.params))?;
+    writeln!(
+        f,
+        "{}{}:  # {}",
+        block.id,
+        fmt.vals(&block.params),
+        block.addr
+    )?;
 
     for param in &block.params {
         maybe_fmt_alias(fmt, aliases, f, *param)?;

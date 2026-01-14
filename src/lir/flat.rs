@@ -98,18 +98,22 @@ pub fn func_from_flat(
         builder: SsaBuilder::new(func.addr()),
     };
 
+    let entry = state.builder.new_block(func.addr());
     for block_addr in func.blocks() {
-        let ssa = state.builder.new_block();
+        let ssa = if *block_addr == func.addr() {
+            entry
+        } else {
+            state.builder.new_block(*block_addr)
+        };
         state.blocks.insert(*block_addr, ssa);
     }
 
     {
-        let flat_entry = func.blocks().first().unwrap();
-        let entry = state.blocks[flat_entry];
+        let flat_entry = func.addr();
         state.builder.switch(entry);
 
         let mut block_state = BlockState {
-            flat_block: &blocks[flat_entry],
+            flat_block: &blocks[&flat_entry],
             state: &mut state,
         };
 

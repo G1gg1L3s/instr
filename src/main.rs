@@ -103,8 +103,7 @@ fn main() {
             func.addr()
         );
         let mut ssa_func = lir::flat::func_from_flat(func, &blocks);
-        ssa_func.patch_resolve_aliases();
-
+        ssa_func.resolve();
         println!("{}", ssa_func.fmt());
     }
 

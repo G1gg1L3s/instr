@@ -373,6 +373,27 @@ impl Terminator {
             Terminator::Ret { .. } => {}
         }
     }
+
+    pub fn visit_jumps(&self, mut callback: impl FnMut(BlockId, &Vec<ValueId>)) {
+        match self {
+            Terminator::Jump(JumpTarget::Known { block, args }) => callback(*block, args),
+            Terminator::Jump(JumpTarget::Unknown { .. }) => {}
+            Terminator::Brif {
+                cond: _,
+                thenb,
+                elseb,
+            } => {
+                if let JumpTarget::Known { block, args } = thenb {
+                    callback(*block, args);
+                }
+
+                if let JumpTarget::Known { block, args } = elseb {
+                    callback(*block, args);
+                }
+            }
+            Terminator::Ret { .. } => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -170,4 +170,71 @@ impl SsaFunction {
             });
         }
     }
+
+    pub fn patch_resolve_trivial_phis(&mut self) -> bool {
+        let mut to_patch = vec![];
+        for block_id in self.blocks.keys() {
+            let block = &self.blocks[block_id];
+            let preds = block.predecessors.clone();
+
+            let params: Vec<ValueId> = block.params.clone();
+            let mut param_values = vec![vec![]; params.len()];
+
+            log::trace!(
+                ">> Collecting param values for {block_id}{}",
+                crate::lir::fmt::FmtList(&params)
+            );
+
+            for pred in preds {
+                self.extract_param_values(block_id, &mut param_values, pred);
+            }
+
+            for (phi, values) in params.iter().zip(&param_values) {
+                if let Some(trivial) = crate::lir::ssa_builder::extract_trivial_phi(*phi, values) {
+                    to_patch.push((block_id, *phi, trivial));
+                }
+            }
+        }
+
+        for &(block_id, phi, trivial) in &to_patch {
+            log::trace!(">> Patching {block_id}: {phi} -> {trivial}");
+            self.patch_remove_block_param_and_calls(block_id, phi);
+            self.set_alias(phi, trivial);
+        }
+        let patched = !to_patch.is_empty();
+        patched
+    }
+
+    fn extract_param_values(
+        &self,
+        block_id: BlockId,
+        param_values: &mut Vec<Vec<ValueId>>,
+        pred: BlockId,
+    ) {
+        fn collect_param_values(param_values: &mut Vec<Vec<ValueId>>, args: &[ValueId]) {
+            log::trace!(">>> - param values: {}", crate::lir::fmt::FmtList(args));
+            for (i, arg) in args.iter().copied().enumerate() {
+                param_values[i].push(arg);
+            }
+        }
+
+        self.blocks[pred].terminator().visit_jumps(|target, args| {
+            if target == block_id {
+                collect_param_values(param_values, args);
+            }
+        });
+    }
+
+    pub fn resolve(&mut self) {
+        loop {
+            let patched = self.patch_resolve_aliases();
+            if !patched {
+                break;
+            }
+            let patched = self.patch_resolve_trivial_phis();
+            if !patched {
+                break;
+            }
+        }
+    }
 }

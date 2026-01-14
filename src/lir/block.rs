@@ -1,8 +1,11 @@
 use std::ops::{Index, IndexMut};
 
-use crate::lir::{
-    ins::{InsId, Terminator},
-    value::ValueId,
+use crate::{
+    addr::Addr,
+    lir::{
+        ins::{InsId, Terminator},
+        value::ValueId,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -14,6 +17,7 @@ pub struct BlockId(u16);
 #[derive(Debug, Clone)]
 pub struct Block {
     pub id: BlockId,
+    pub addr: Addr,
     pub params: Vec<ValueId>,
     pub ins: Vec<InsId>,
     pub predecessors: Vec<BlockId>,
@@ -35,10 +39,11 @@ impl Blocks {
         Self(vec![])
     }
 
-    pub fn add(&mut self) -> BlockId {
+    pub fn add(&mut self, addr: Addr) -> BlockId {
         let id = self.0.len().try_into().expect("to much Blocks");
         self.0.push(Block {
             id: BlockId(id),
+            addr,
             params: vec![],
             ins: vec![],
             predecessors: vec![],
