@@ -10,7 +10,7 @@ use crate::{
         ins::{BinOp, CallTarget, Condition, Imm, JumpTarget, MemSpace},
         ssa_builder::{SsaBuilder, VarId},
         ty::Ty,
-        value::{Value, ValueId},
+        value::ValueId,
     },
     third_cfg,
 };
@@ -31,7 +31,8 @@ impl FlatVar {
                 let temp = block.temp(temp_id);
                 size_to_ssa(temp.size)
             }
-            FlatVar::Flags => Ty::Flags,
+            // TODO: is it correct?
+            FlatVar::Flags => Ty::Flags(Flags::all()),
             FlatVar::Mem => Ty::Mem,
         }
     }
@@ -254,23 +255,24 @@ impl<'a> BlockState<'a> {
     fn lower_condition(&mut self, cond: flat_ir::Condition) -> ValueId {
         let required = flags_to_ssa(cond.required_flags());
         let flags = self.get_var(FlatVar::Flags);
-        let flags = self.state.builder.read_var(flags);
+        let flags_val = self.state.builder.read_var(flags);
 
-        let value = self.state.builder.func.val(flags);
-        let Value::Flags(group) = value else {
-            log::warn!("invalid value {flags}: expected flags, found: {value:?}");
+        let ty = self.state.builder.func.val_ty(flags_val);
+        let Some(Ty::Flags(flags)) = ty else {
+            log::warn!("invalid value {flags_val}: expected flags, found: {ty:?}");
             return self.state.builder.ins().unimplemented();
         };
 
-        if !group.flags().contains(required) {
+        if !flags.contains(required) {
             panic!(
                 "required flags: {:?}, but only provided: {:?}",
-                required, group
+                required,
+                FlagsGroup::new(flags)
             );
         }
 
         let cond = cond_to_ssa(cond);
-        self.state.builder.ins().cond(cond, flags)
+        self.state.builder.ins().cond(cond, flags_val)
     }
 
     fn lower_terminator(&mut self, terminator: &flat_ir::Terminator) {

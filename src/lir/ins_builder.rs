@@ -46,7 +46,11 @@ impl<'a> InsBuilder<'a> {
             self.func.values.add(Value::Invalid)
         };
 
-        let flags = flags.map(|f| self.func.values.add(Value::Flags(f)));
+        let flags = flags.map(|f| {
+            self.func.values.add(Value::Temp {
+                ty: Ty::Flags(f.flags()),
+            })
+        });
 
         self.emit(Ins::BinOp {
             op,

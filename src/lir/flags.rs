@@ -1,5 +1,5 @@
 bitflags::bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Flags: u16 {
         /// Carry flag
         const CARRY =    1 << 0;

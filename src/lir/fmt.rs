@@ -143,7 +143,6 @@ impl<'a> Display for ValueFmt<'a> {
         match val {
             Value::Invalid => write!(f, "invalid{}", self.val.id()),
             Value::Temp { .. } | Value::Alias { .. } => write!(f, "{}", self.val),
-            Value::Flags(flags) => write!(f, "{flags}#{}", self.val.id()),
             Value::Mem => write!(f, "mem{}", self.val.id()),
         }
     }

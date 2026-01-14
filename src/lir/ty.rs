@@ -1,6 +1,9 @@
+use crate::lir::flags::{Flags, FlagsGroup};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Ty {
-    Flags,
+    Flags(Flags),
+
     Bool,
 
     U8,
@@ -22,7 +25,7 @@ pub enum Ty {
 impl std::fmt::Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Ty::Flags => write!(f, "flags"),
+            Ty::Flags(flags) => write!(f, "flags({})", FlagsGroup::new(*flags)),
             Ty::Bool => write!(f, "bool"),
             Ty::U8 => write!(f, "u8"),
             Ty::U16 => write!(f, "u16"),

@@ -1,6 +1,6 @@
 use std::ops::{Index, IndexMut};
 
-use crate::lir::{flags::FlagsGroup, ty::Ty};
+use crate::lir::ty::Ty;
 
 #[derive(Debug, Clone)]
 pub struct Values(Vec<Value>);
@@ -19,7 +19,6 @@ pub enum Value {
     Invalid,
     Mem,
     Temp { ty: Ty },
-    Flags(FlagsGroup),
     Alias { to: ValueId },
 }
 
