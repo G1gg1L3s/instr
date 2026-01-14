@@ -1,4 +1,7 @@
-use crate::lir::{block::BlockId, fmt::FmtList, ty::Ty, value::ValueId};
+use crate::{
+    addr::Addr,
+    lir::{block::BlockId, fmt::FmtList, ty::Ty, value::ValueId},
+};
 
 use std::ops::{Index, IndexMut};
 
@@ -96,7 +99,7 @@ impl std::fmt::Display for BinOp {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Ins {
     BinOp {
         op: BinOp,
@@ -132,6 +135,11 @@ pub enum Ins {
         dst: ValueId,
         flags: ValueId,
         cond: Condition,
+    },
+    Call {
+        result: Vec<ValueId>,
+        target: CallTarget,
+        args: Vec<ValueId>,
     },
 }
 
@@ -172,6 +180,28 @@ impl std::fmt::Display for Ins {
                 flags: src,
                 cond,
             } => write!(f, "{dst} = cond({cond}) {src}"),
+            Ins::Call {
+                result,
+                target,
+                args,
+            } => {
+                write!(f, "{} = call {target}{}", FmtList(result), FmtList(args))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CallTarget {
+    Known { addr: Addr },
+    Unknown { addr: ValueId },
+}
+
+impl std::fmt::Display for CallTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CallTarget::Known { addr } => write!(f, "func_{}", addr),
+            CallTarget::Unknown { addr } => write!(f, "?{addr}"),
         }
     }
 }

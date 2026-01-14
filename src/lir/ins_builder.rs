@@ -2,7 +2,7 @@ use crate::lir::{
     block::BlockId,
     flags::FlagsGroup,
     func::SsaFunction,
-    ins::{BinOp, Condition, Imm, Ins, JumpTarget, MemSpace, Terminator},
+    ins::{BinOp, CallTarget, Condition, Imm, Ins, JumpTarget, MemSpace, Terminator},
     ty::Ty,
     value::ValueId,
 };
@@ -100,6 +100,25 @@ impl<'a> InsBuilder<'a> {
 
     pub fn ret(&mut self, adjust: u16, args: Vec<ValueId>) {
         self.terminator(Terminator::Ret { adjust, args });
+    }
+
+    pub fn call(
+        &mut self,
+        target: CallTarget,
+        args: Vec<ValueId>,
+        return_types: &[Ty],
+    ) -> Vec<ValueId> {
+        let result = return_types
+            .iter()
+            .map(|ty| self.func.values.add(Value::Temp { ty: *ty }))
+            .collect::<Vec<_>>();
+
+        self.emit(Ins::Call {
+            result: result.clone(),
+            target,
+            args,
+        });
+        result
     }
 
     pub fn load(&mut self, ty: Ty, addr: ValueId, mem: ValueId, space: MemSpace) -> ValueId {

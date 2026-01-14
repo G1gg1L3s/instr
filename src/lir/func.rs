@@ -66,6 +66,7 @@ impl SsaFunction {
     }
 
     pub fn patch_remove_block_param_and_calls(&mut self, block_id: BlockId, value: ValueId) {
+        log::trace!("- Patch remove block param: {block_id}({value})");
         let idx = self.patch_remove_block_param(block_id, value);
         let block = &mut self.blocks[block_id];
 
@@ -116,6 +117,7 @@ impl SsaFunction {
             Ins::Load { dst, .. } => res.push(*dst).unwrap(),
             Ins::Cond { dst, .. } => res.push(*dst).unwrap(),
             Ins::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
+            Ins::Call { result, .. } => res.extend_from_slice(result).unwrap(),
         }
 
         res
@@ -133,6 +135,7 @@ impl SsaFunction {
     }
 
     pub fn val(&self, val: ValueId) -> &Value {
+        let val = self.resolve_alias(val);
         &self.values[val]
     }
 }

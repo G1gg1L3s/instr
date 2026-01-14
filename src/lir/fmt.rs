@@ -122,6 +122,17 @@ impl<'a> Display for InsFmt<'a> {
                 self.fmt.val(*dst),
                 self.fmt.val(*src)
             ),
+            Ins::Call {
+                result,
+                target,
+                args,
+            } => write!(
+                f,
+                "{} = call {}{}",
+                self.fmt.vals(result),
+                target,
+                self.fmt.vals(args)
+            ),
         }
     }
 }

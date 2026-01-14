@@ -188,7 +188,7 @@ impl SsaBuilder {
         let trivial = extract_trivial_phi(phi, &values);
         if let Some(trivial) = trivial {
             self.func.set_alias(phi, trivial);
-            self.func.patch_remove_block_param_and_calls(block, phi);
+            self.func.patch_remove_block_param(block, phi);
 
             log::trace!("    >> Phi {phi} ({var}) is trivial: {trivial}");
             return trivial;

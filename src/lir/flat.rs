@@ -7,7 +7,7 @@ use crate::{
         block::BlockId,
         flags::{Flags, FlagsGroup},
         func::SsaFunction,
-        ins::{BinOp, Condition, Imm, JumpTarget, MemSpace},
+        ins::{BinOp, CallTarget, Condition, Imm, JumpTarget, MemSpace},
         ssa_builder::{SsaBuilder, VarId},
         ty::Ty,
         value::{Value, ValueId},
@@ -153,6 +153,7 @@ pub fn func_from_flat(
                 &flat_ir::Instr::Store { addr, src, space } => {
                     block_state.lower_store(addr, src, space)
                 }
+                &flat_ir::Instr::Call { target } => block_state.lower_call(target),
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -257,7 +258,8 @@ impl<'a> BlockState<'a> {
 
         let value = self.state.builder.func.val(flags);
         let Value::Flags(group) = value else {
-            panic!("invalid value {flags}: expected flags, found: {value:?}")
+            log::warn!("invalid value {flags}: expected flags, found: {value:?}");
+            return self.state.builder.ins().unimplemented();
         };
 
         if !group.flags().contains(required) {
@@ -360,6 +362,42 @@ impl<'a> BlockState<'a> {
             }
             flat_ir::Value::Flag(_) => Ty::Bool,
             flat_ir::Value::X87StatusWord => todo!(),
+        }
+    }
+
+    fn lower_call(&mut self, target: flat_ir::Value) {
+        let target = if let Some(addr) = as_u32_addr(&target) {
+            CallTarget::Known { addr }
+        } else {
+            let addr = self.lower_val(target);
+            CallTarget::Unknown { addr }
+        };
+
+        let flat_vars = [
+            FlatVar::Mem,
+            FlatVar::Reg(flat_ir::Reg::Esp),
+            FlatVar::Reg(flat_ir::Reg::Eax),
+            FlatVar::Reg(flat_ir::Reg::Ecx),
+            FlatVar::Reg(flat_ir::Reg::Edx),
+        ];
+        let return_types = flat_vars
+            .iter()
+            .map(|f| f.ty(&self.flat_block))
+            .collect::<Vec<_>>();
+
+        let args = flat_vars
+            .iter()
+            .map(|var| {
+                let var = self.get_var(*var);
+                self.state.builder.read_var(var)
+            })
+            .collect::<Vec<_>>();
+
+        let res = self.state.builder.ins().call(target, args, &return_types);
+
+        for (res, arg) in res.iter().zip(flat_vars) {
+            let var = self.get_var(arg);
+            self.state.builder.write_var(var, *res);
         }
     }
 }
