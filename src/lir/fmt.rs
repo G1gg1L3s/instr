@@ -1,10 +1,14 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Display,
+};
 
 use crate::lir::{
     block::Block,
     flags::FlagsGroup,
     func::SsaFunction,
     ins::{InsId, JumpTarget, Terminator},
+    io::Io,
     ty::Ty,
     value::{Value, ValueId},
 };
@@ -47,6 +51,11 @@ pub struct ValueFmt<'a> {
 pub struct ValuesFmt<'a> {
     fmt: FuncFmt<'a>,
     vals: &'a [ValueId],
+}
+
+pub struct IoValuesFmt<'a> {
+    fmt: FuncFmt<'a>,
+    vals: &'a BTreeMap<Io, ValueId>,
 }
 
 pub struct TyFmt {
@@ -177,6 +186,18 @@ impl Display for TyFmt {
     }
 }
 
+impl<'a> Display for IoValuesFmt<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, (io, value)) in self.vals.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}: {}", io, self.fmt.val(*value))?;
+        }
+        Ok(())
+    }
+}
+
 impl<'a> FuncFmt<'a> {
     pub fn new(func: &'a SsaFunction) -> Self {
         Self { func }
@@ -194,6 +215,10 @@ impl<'a> FuncFmt<'a> {
         ValuesFmt { fmt: self, vals }
     }
 
+    pub fn io_vals(self, vals: &'a BTreeMap<Io, ValueId>) -> IoValuesFmt<'a> {
+        IoValuesFmt { fmt: self, vals }
+    }
+
     pub fn ty(self, val: ValueId) -> TyFmt {
         TyFmt {
             ty: self.func.val_ty(val),
@@ -203,7 +228,12 @@ impl<'a> FuncFmt<'a> {
 
 impl<'a> Display for FuncFmt<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "function {}():", self.func.addr)?;
+        writeln!(
+            f,
+            "function {}({}):",
+            self.func.addr,
+            self.io_vals(&self.func.inputs)
+        )?;
 
         let aliases = self.func.inverse_aliases();
 

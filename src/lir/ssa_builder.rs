@@ -10,6 +10,7 @@ use crate::{
         fmt::FmtList,
         func::SsaFunction,
         ins_builder::InsBuilder,
+        io::Io,
         ty::Ty,
         value::{Value, ValueId},
     },
@@ -109,6 +110,11 @@ impl SsaBuilder {
 
     pub fn add_block_param(&mut self, block: BlockId, param: ValueId) {
         self.func.blocks[block].params.push(param);
+    }
+
+    pub fn add_entry_param(&mut self, block: BlockId, arg: Io, param: ValueId) {
+        self.func.blocks[block].params.push(param);
+        self.func.add_input_arg(arg, param);
     }
 
     pub fn ins(&mut self) -> InsBuilder<'_> {

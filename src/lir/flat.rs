@@ -8,6 +8,7 @@ use crate::{
         flags::{Flags, FlagsGroup},
         func::SsaFunction,
         ins::{BinOp, CallTarget, Condition, Imm, JumpTarget, MemSpace},
+        io::Io,
         ssa_builder::{SsaBuilder, VarId},
         ty::Ty,
         value::ValueId,
@@ -120,14 +121,20 @@ pub fn func_from_flat(
         {
             let param = block_state.state.builder.new_param(Ty::Mem);
             let var = block_state.get_var(FlatVar::Mem);
-            block_state.state.builder.add_block_param(entry, param);
+            block_state
+                .state
+                .builder
+                .add_entry_param(entry, Io::Mem, param);
             block_state.state.builder.write_var(var, param);
         }
 
         for reg in REGS {
             let var = block_state.get_var(FlatVar::Reg(reg));
             let param = block_state.state.builder.new_param(Ty::U32);
-            block_state.state.builder.add_block_param(entry, param);
+            block_state
+                .state
+                .builder
+                .add_entry_param(entry, reg_to_io(reg), param);
             block_state.state.builder.write_var(var, param);
         }
     }
@@ -169,6 +176,21 @@ pub fn func_from_flat(
     }
 
     state.builder.finalise()
+}
+
+fn reg_to_io(reg: flat_ir::Reg) -> Io {
+    match reg {
+        flat_ir::Reg::Eax => Io::Eax,
+        flat_ir::Reg::Ebx => Io::Ebx,
+        flat_ir::Reg::Ecx => Io::Ecx,
+        flat_ir::Reg::Edx => Io::Edx,
+        flat_ir::Reg::Esi => Io::Esi,
+        flat_ir::Reg::Edi => Io::Edi,
+        flat_ir::Reg::Ebp => Io::Ebp,
+        flat_ir::Reg::Esp => Io::Esp,
+        flat_ir::Reg::Eip => Io::Eip,
+        flat_ir::Reg::St(_) => unreachable!(),
+    }
 }
 
 impl<'a> BlockState<'a> {

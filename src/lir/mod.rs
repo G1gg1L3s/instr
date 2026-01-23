@@ -5,6 +5,7 @@ pub mod fmt;
 pub mod func;
 pub mod ins;
 pub mod ins_builder;
+pub mod io;
 pub mod ir;
 pub mod ssa_builder;
 pub mod ty;
