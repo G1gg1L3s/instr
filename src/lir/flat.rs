@@ -37,6 +37,15 @@ impl FlatVar {
             FlatVar::Mem => Ty::Mem,
         }
     }
+
+    fn to_io(&self) -> Option<Io> {
+        match self {
+            FlatVar::Reg(reg) => Some(reg_to_io(*reg)),
+            FlatVar::Temp(_) => None,
+            FlatVar::Flags => None,
+            FlatVar::Mem => Some(Io::Mem),
+        }
+    }
 }
 
 fn size_to_ssa(size: flat_ir::Size) -> Ty {
@@ -269,9 +278,10 @@ impl<'a> BlockState<'a> {
     fn lower_ret(&mut self, stack_adjust: u16) {
         let args = std::iter::once(FlatVar::Mem)
             .chain(REGS.into_iter().map(FlatVar::Reg))
-            .map(|var| {
-                let var = self.get_var(var);
-                self.state.builder.read_var(var)
+            .map(|flatvar| {
+                let var = self.get_var(flatvar);
+                let val = self.state.builder.read_var(var);
+                (flatvar.to_io().unwrap(), val)
             })
             .collect();
 

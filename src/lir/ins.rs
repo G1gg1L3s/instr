@@ -1,9 +1,12 @@
 use crate::{
     addr::Addr,
-    lir::{block::BlockId, fmt::FmtList, ty::Ty, value::ValueId},
+    lir::{block::BlockId, fmt::FmtList, io::Io, ty::Ty, value::ValueId},
 };
 
-use std::ops::{Index, IndexMut};
+use std::{
+    collections::BTreeMap,
+    ops::{Index, IndexMut},
+};
 
 #[derive(Debug, Clone)]
 pub struct Instrs(Vec<Ins>);
@@ -309,7 +312,7 @@ pub enum Terminator {
     },
     Ret {
         adjust: u16,
-        args: Vec<ValueId>,
+        args: BTreeMap<Io, ValueId>,
     },
 }
 
@@ -321,7 +324,17 @@ impl std::fmt::Display for Terminator {
                 write!(f, "brif {cond} then {thenb} else {elseb}",)
             }
             Terminator::Ret { adjust, args } => {
-                write!(f, "ret stack:{} {}", adjust, FmtList(args))
+                write!(f, "ret stack:{} ", adjust)?;
+                let mut comma = false;
+                for (io, val) in args {
+                    if comma {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{io}: {val}")?;
+                    comma = true;
+                }
+
+                Ok(())
             }
         }
     }
@@ -348,7 +361,7 @@ impl Terminator {
                 Self::visit_target(elseb, &mut callback);
             }
             Terminator::Ret { adjust: _, args } => {
-                args.iter_mut().map(callback).count();
+                args.values_mut().map(callback).count();
             }
         }
     }

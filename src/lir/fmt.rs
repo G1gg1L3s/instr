@@ -304,7 +304,7 @@ fn fmt_terminator(
             if args.len() == 0 {
                 write!(f, "ret stack:{adjust}")
             } else {
-                write!(f, "ret {} stack:{}", fmt.vals(args), adjust)
+                write!(f, "ret stack:{} ({})", adjust, fmt.io_vals(args))
             }
         }
     }
