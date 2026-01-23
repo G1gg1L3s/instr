@@ -142,9 +142,9 @@ pub enum Ins {
         cond: Condition,
     },
     Call {
-        result: Vec<ValueId>,
+        result: IoValues,
         target: CallTarget,
-        args: Vec<ValueId>,
+        args: IoValues,
     },
 }
 impl Ins {
@@ -208,7 +208,7 @@ impl Ins {
                 target,
                 args,
             } => {
-                for arg in result.iter_mut().chain(args) {
+                for arg in result.values_mut().chain(args.values_mut()) {
                     callback(arg);
                 }
 
@@ -263,7 +263,7 @@ impl std::fmt::Display for Ins {
                 target,
                 args,
             } => {
-                write!(f, "{} = call {target}{}", FmtList(result), FmtList(args))
+                write!(f, "({}) = call {target}({})", result, args)
             }
         }
     }

@@ -120,7 +120,7 @@ impl SsaFunction {
             Ins::Load { dst, .. } => res.push(*dst).unwrap(),
             Ins::Cond { dst, .. } => res.push(*dst).unwrap(),
             Ins::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
-            Ins::Call { result, .. } => res.extend_from_slice(result).unwrap(),
+            Ins::Call { result, .. } => res.extend(result.values()),
         }
 
         res

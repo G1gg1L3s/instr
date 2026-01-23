@@ -425,23 +425,40 @@ impl<'a> BlockState<'a> {
         ];
         let return_types = flat_vars
             .iter()
-            .map(|f| f.ty(&self.flat_block))
+            .map(|f| f.to_io().unwrap())
             .collect::<Vec<_>>();
 
         let args = flat_vars
             .iter()
-            .map(|var| {
-                let var = self.get_var(*var);
-                self.state.builder.read_var(var)
+            .map(|flatvar| {
+                let var = self.get_var(*flatvar);
+                let val = self.state.builder.read_var(var);
+                (flatvar.to_io().unwrap(), val)
             })
-            .collect::<Vec<_>>();
+            .collect::<_>();
 
         let res = self.state.builder.ins().call(target, args, &return_types);
 
-        for (res, arg) in res.iter().zip(flat_vars) {
-            let var = self.get_var(arg);
+        for (io, res) in res.iter() {
+            let flatvar = io_to_flatvar(*io);
+            let var = self.get_var(flatvar);
             self.state.builder.write_var(var, *res);
         }
+    }
+}
+
+fn io_to_flatvar(io: Io) -> FlatVar {
+    match io {
+        Io::Mem => FlatVar::Mem,
+        Io::Esp => FlatVar::Reg(flat_ir::Reg::Esp),
+        Io::Eax => FlatVar::Reg(flat_ir::Reg::Eax),
+        Io::Ebx => FlatVar::Reg(flat_ir::Reg::Ebx),
+        Io::Ecx => FlatVar::Reg(flat_ir::Reg::Ecx),
+        Io::Edx => FlatVar::Reg(flat_ir::Reg::Edx),
+        Io::Esi => FlatVar::Reg(flat_ir::Reg::Esi),
+        Io::Edi => FlatVar::Reg(flat_ir::Reg::Edi),
+        Io::Ebp => FlatVar::Reg(flat_ir::Reg::Ebp),
+        Io::Eip => FlatVar::Reg(flat_ir::Reg::Eip),
     }
 }
 

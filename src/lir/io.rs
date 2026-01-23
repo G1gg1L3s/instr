@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::lir::value::ValueId;
+use crate::lir::{ty::Ty, value::ValueId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Io {
@@ -15,6 +15,11 @@ pub enum Io {
     Edi,
     Ebp,
     Eip,
+}
+impl Io {
+    pub fn ty(&self) -> Ty {
+        Ty::U32
+    }
 }
 
 impl std::fmt::Display for Io {
@@ -42,6 +47,10 @@ pub struct IoValues {
 impl IoValues {
     pub fn iter(&self) -> impl Iterator<Item = (&Io, &ValueId)> {
         self.vals.iter()
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = ValueId> {
+        self.vals.values().copied()
     }
 
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut ValueId> {

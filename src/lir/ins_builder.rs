@@ -3,7 +3,7 @@ use crate::lir::{
     flags::FlagsGroup,
     func::SsaFunction,
     ins::{BinOp, CallTarget, Condition, Imm, Ins, JumpTarget, MemSpace, Terminator},
-    io::IoValues,
+    io::{Io, IoValues},
     ty::Ty,
     value::ValueId,
 };
@@ -107,16 +107,11 @@ impl<'a> InsBuilder<'a> {
         self.terminator(Terminator::Ret { adjust, args });
     }
 
-    pub fn call(
-        &mut self,
-        target: CallTarget,
-        args: Vec<ValueId>,
-        return_types: &[Ty],
-    ) -> Vec<ValueId> {
+    pub fn call(&mut self, target: CallTarget, args: IoValues, return_types: &[Io]) -> IoValues {
         let result = return_types
             .iter()
-            .map(|ty| self.func.values.add(Value::Temp { ty: *ty }))
-            .collect::<Vec<_>>();
+            .map(|io| (*io, self.func.values.add(Value::Temp { ty: io.ty() })))
+            .collect::<IoValues>();
 
         self.emit(Ins::Call {
             result: result.clone(),

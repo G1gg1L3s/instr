@@ -135,10 +135,10 @@ impl<'a> Display for InsFmt<'a> {
                 args,
             } => write!(
                 f,
-                "{} = call {}{}",
-                self.fmt.vals(result),
+                "({}) = call {}({})",
+                self.fmt.io_vals(result),
                 target,
-                self.fmt.vals(args)
+                self.fmt.io_vals(args)
             ),
         }
     }
