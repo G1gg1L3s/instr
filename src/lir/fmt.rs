@@ -1,14 +1,11 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt::Display,
-};
+use std::{collections::HashMap, fmt::Display};
 
 use crate::lir::{
     block::Block,
     flags::FlagsGroup,
     func::SsaFunction,
     ins::{InsId, JumpTarget, Terminator},
-    io::Io,
+    io::IoValues,
     ty::Ty,
     value::{Value, ValueId},
 };
@@ -55,7 +52,7 @@ pub struct ValuesFmt<'a> {
 
 pub struct IoValuesFmt<'a> {
     fmt: FuncFmt<'a>,
-    vals: &'a BTreeMap<Io, ValueId>,
+    vals: &'a IoValues,
 }
 
 pub struct TyFmt {
@@ -215,7 +212,7 @@ impl<'a> FuncFmt<'a> {
         ValuesFmt { fmt: self, vals }
     }
 
-    pub fn io_vals(self, vals: &'a BTreeMap<Io, ValueId>) -> IoValuesFmt<'a> {
+    pub fn io_vals(self, vals: &'a IoValues) -> IoValuesFmt<'a> {
         IoValuesFmt { fmt: self, vals }
     }
 

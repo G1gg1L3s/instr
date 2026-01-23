@@ -1,11 +1,9 @@
-use std::collections::BTreeMap;
-
 use crate::lir::{
     block::BlockId,
     flags::FlagsGroup,
     func::SsaFunction,
     ins::{BinOp, CallTarget, Condition, Imm, Ins, JumpTarget, MemSpace, Terminator},
-    io::Io,
+    io::IoValues,
     ty::Ty,
     value::ValueId,
 };
@@ -105,7 +103,7 @@ impl<'a> InsBuilder<'a> {
         self.terminator(terminator);
     }
 
-    pub fn ret(&mut self, adjust: u16, args: BTreeMap<Io, ValueId>) {
+    pub fn ret(&mut self, adjust: u16, args: IoValues) {
         self.terminator(Terminator::Ret { adjust, args });
     }
 

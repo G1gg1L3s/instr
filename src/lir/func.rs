@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use crate::{
     addr::Addr,
@@ -7,7 +7,7 @@ use crate::{
         fmt::FuncFmt,
         ins::{Ins, InsId, Instrs},
         ins_builder::InsBuilder,
-        io::Io,
+        io::{Io, IoValues},
         ty::Ty,
         value::{Value, ValueId, Values},
     },
@@ -19,7 +19,7 @@ pub struct SsaFunction {
     pub ins: Instrs,
     pub blocks: Blocks,
     pub values: Values,
-    pub inputs: BTreeMap<Io, ValueId>,
+    pub inputs: IoValues,
 }
 
 impl SsaFunction {
