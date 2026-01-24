@@ -1,5 +1,5 @@
 use crate::lir::{
-    analysis::inverse_map,
+    analysis::inverse_map::{self, ValueSource},
     func::SsaFunction,
     ins::{BinOp, Condition, Ins},
     value::{Value, ValueId},
@@ -22,10 +22,14 @@ pub fn exec(func: &mut SsaFunction) {
                 continue;
             };
 
-            let Some(flags_source_ins) = val_to_ins.get(&flags).copied() else {
-                log::error!("No entry found for flags {flags} in {}", block.addr);
+            let Some(ValueSource::Ins(flags_source_ins)) = val_to_ins.get(&flags).copied() else {
+                log::error!(
+                    "No instruction entry found for flags {flags} in {}",
+                    block.addr
+                );
                 continue;
             };
+
             let &Ins::BinOp {
                 op,
                 dst: _,
