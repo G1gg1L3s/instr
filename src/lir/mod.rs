@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod block;
 pub mod flags;
 pub mod flat;

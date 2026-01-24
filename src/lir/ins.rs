@@ -84,6 +84,8 @@ pub enum BinOp {
     ShiftLeft,
     ShifRight,
     ShifArithRight,
+
+    Condition(Condition),
 }
 
 impl std::fmt::Display for BinOp {
@@ -100,6 +102,7 @@ impl std::fmt::Display for BinOp {
             BinOp::ShiftLeft => write!(f, "<<"),
             BinOp::ShifRight => write!(f, ">>"),
             BinOp::ShifArithRight => write!(f, "a>>"),
+            BinOp::Condition(cond) => write!(f, "{cond}"),
         }
     }
 }

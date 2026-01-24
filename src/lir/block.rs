@@ -57,6 +57,10 @@ impl Blocks {
         BlockKeys(0..max)
     }
 
+    pub fn values(&self) -> impl Iterator<Item = &Block> {
+        self.0.iter()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (BlockId, &Block)> {
         self.keys().zip(self.0.iter())
     }

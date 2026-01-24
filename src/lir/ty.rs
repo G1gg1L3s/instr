@@ -1,4 +1,7 @@
-use crate::lir::flags::{Flags, FlagsGroup};
+use crate::lir::{
+    flags::{Flags, FlagsGroup},
+    ins::Imm,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Ty {
@@ -20,6 +23,17 @@ pub enum Ty {
     F64,
 
     Mem,
+}
+
+impl Ty {
+    pub fn imm(self, x: u8) -> Imm {
+        match self {
+            Ty::U8 => Imm::U8(x.into()),
+            Ty::U16 => Imm::U16(x.into()),
+            Ty::U32 => Imm::U32(x.into()),
+            _ => panic!("cannot convert {self} to immediate"),
+        }
+    }
 }
 
 impl std::fmt::Display for Ty {
