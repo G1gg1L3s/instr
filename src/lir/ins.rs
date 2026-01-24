@@ -1,6 +1,6 @@
 use crate::{
     addr::Addr,
-    lir::{block::BlockId, fmt::FmtList, io::IoValues, ty::Ty, value::ValueId},
+    lir::{block::BlockId, fmt::FmtList, io::IoValues, value::ValueId},
 };
 
 use std::ops::{Index, IndexMut};
@@ -116,10 +116,6 @@ pub enum Ins {
         rhs: ValueId,
         flags: Option<ValueId>,
     },
-    Const {
-        dst: ValueId,
-        val: Imm,
-    },
     Uninit {
         dst: ValueId,
     },
@@ -173,7 +169,6 @@ impl Ins {
                 callback(rhs);
                 flags.as_mut().map(callback);
             }
-            Ins::Const { dst, val: _ } => callback(dst),
             Ins::Uninit { dst } => callback(dst),
             Ins::Unimpl { dst } => callback(dst),
             Ins::Load {
@@ -241,7 +236,6 @@ impl std::fmt::Display for Ins {
                 }
             }
             Ins::Uninit { dst } => write!(f, "{dst} = ???"),
-            Ins::Const { dst, val } => write!(f, "{dst} = const {val}"),
             Ins::Unimpl { dst } => write!(f, "{dst} = unimplemented"),
             Ins::Load {
                 dst,
@@ -405,33 +399,6 @@ impl Terminator {
                 }
             }
             Terminator::Ret { .. } => {}
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Imm {
-    U8(u8),
-    U16(u16),
-    U32(u32),
-}
-
-impl Imm {
-    pub fn ty(self) -> Ty {
-        match self {
-            Imm::U8(_) => Ty::U8,
-            Imm::U16(_) => Ty::U16,
-            Imm::U32(_) => Ty::U32,
-        }
-    }
-}
-
-impl std::fmt::Display for Imm {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Imm::U8(x) => write!(f, "{x}.u8"),
-            Imm::U16(x) => write!(f, "{x}.u16"),
-            Imm::U32(x) => write!(f, "{x}.u32"),
         }
     }
 }

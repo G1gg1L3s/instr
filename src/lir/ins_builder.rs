@@ -2,10 +2,10 @@ use crate::lir::{
     block::BlockId,
     flags::FlagsGroup,
     func::SsaFunction,
-    ins::{BinOp, CallTarget, Condition, Imm, Ins, JumpTarget, MemSpace, Terminator},
+    ins::{BinOp, CallTarget, Condition, Ins, JumpTarget, MemSpace, Terminator},
     io::{Io, IoValues},
     ty::Ty,
-    value::ValueId,
+    value::{Imm, ValueId},
 };
 
 use super::value::Value;
@@ -29,9 +29,7 @@ impl<'a> InsBuilder<'a> {
     }
 
     pub fn iconst(&mut self, imm: Imm) -> ValueId {
-        let dst = self.func.values.add(Value::Temp { ty: imm.ty() });
-        self.emit(Ins::Const { dst, val: imm });
-        dst
+        self.func.values.add(Value::Imm(imm))
     }
 
     pub fn bin(

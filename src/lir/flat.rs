@@ -7,11 +7,11 @@ use crate::{
         block::BlockId,
         flags::{Flags, FlagsGroup},
         func::SsaFunction,
-        ins::{BinOp, CallTarget, Condition, Imm, JumpTarget, MemSpace},
+        ins::{BinOp, CallTarget, Condition, JumpTarget, MemSpace},
         io::Io,
         ssa_builder::{SsaBuilder, VarId},
         ty::Ty,
-        value::ValueId,
+        value::{Imm, ValueId},
     },
     third_cfg,
 };

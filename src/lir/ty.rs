@@ -1,6 +1,6 @@
 use crate::lir::{
     flags::{Flags, FlagsGroup},
-    ins::Imm,
+    value::Imm,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

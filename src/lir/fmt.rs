@@ -84,7 +84,6 @@ impl<'a> Display for InsFmt<'a> {
             Ins::Uninit { dst } => {
                 write!(f, "{} = ???", self.fmt.val(*dst),)
             }
-            Ins::Const { dst, val } => write!(f, "{} = const {}", self.fmt.val(*dst), val),
             Ins::Unimpl { dst } => write!(f, "{} = unimplemented", self.fmt.val(*dst)),
             Ins::Load {
                 dst,
@@ -154,6 +153,7 @@ impl<'a> Display for ValueFmt<'a> {
             } => write!(f, "{}#{}", FlagsGroup::new(*flags), self.val.id()),
             Value::Temp { .. } | Value::Alias { .. } => write!(f, "{}", self.val),
             Value::Mem => write!(f, "mem{}", self.val.id()),
+            Value::Imm(x) => write!(f, "{x}"),
         }
     }
 }

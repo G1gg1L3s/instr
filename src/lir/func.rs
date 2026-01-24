@@ -115,7 +115,6 @@ impl SsaFunction {
                     res.push(*flags).unwrap()
                 }
             }
-            Ins::Const { dst, .. } => res.push(*dst).unwrap(),
             Ins::Unimpl { dst } => res.push(*dst).unwrap(),
             Ins::Load { dst, .. } => res.push(*dst).unwrap(),
             Ins::Cond { dst, .. } => res.push(*dst).unwrap(),
@@ -133,6 +132,7 @@ impl SsaFunction {
             Value::Temp { ty } => Some(*ty),
             Value::Alias { .. } => self.val_ty(self.resolve_alias(val)),
             Value::Mem => None,
+            Value::Imm(x) => Some(x.ty()),
         }
     }
 
