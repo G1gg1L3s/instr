@@ -316,8 +316,8 @@ fn format_target(
         JumpTarget::Known { block, args } => {
             write!(f, "{}{}", block, fmt.vals(args))?;
         }
-        JumpTarget::Unknown { addr } => {
-            write!(f, "?{}", fmt.val(*addr))?;
+        JumpTarget::Unknown { addr, args } => {
+            write!(f, "?{}({})", fmt.val(*addr), fmt.io_vals(args))?;
         }
     })
 }

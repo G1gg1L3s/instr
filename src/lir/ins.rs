@@ -287,14 +287,14 @@ impl std::fmt::Display for CallTarget {
 #[derive(Debug, Clone)]
 pub enum JumpTarget {
     Known { block: BlockId, args: Vec<ValueId> },
-    Unknown { addr: ValueId },
+    Unknown { addr: ValueId, args: IoValues },
 }
 
 impl std::fmt::Display for JumpTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             JumpTarget::Known { block, args } => write!(f, "{block}{}", FmtList(args)),
-            JumpTarget::Unknown { addr: val } => write!(f, "?{val}"),
+            JumpTarget::Unknown { addr: val, args } => write!(f, "?{val}({args})"),
         }
     }
 }
@@ -333,7 +333,10 @@ impl Terminator {
             JumpTarget::Known { block: _, args } => {
                 args.iter_mut().map(callback).count();
             }
-            JumpTarget::Unknown { addr } => callback(addr),
+            JumpTarget::Unknown { addr, args } => {
+                callback(addr);
+                args.values_mut().for_each(callback);
+            }
         }
     }
 

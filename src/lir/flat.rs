@@ -102,6 +102,7 @@ pub fn func_from_flat(
     func: &third_cfg::Function,
     blocks: &BTreeMap<Addr, flat_ir::Block>,
 ) -> SsaFunction {
+    log::trace!("> Lowering function {}", func.addr());
     let mut state = State {
         blocks: Default::default(),
         registers: Default::default(),
@@ -348,6 +349,10 @@ impl<'a> BlockState<'a> {
     }
 
     fn lower_branch_target(&mut self, target: &flat_ir::Value) -> JumpTarget {
+        let flat_vars = std::iter::once(FlatVar::Mem)
+            .chain(REGS.iter().copied().map(FlatVar::Reg))
+            .collect::<heapless::Vec<_, 32>>();
+
         if let Some(addr) = as_u32_addr(target) {
             if let Some(block) = self.state.blocks.get(&addr) {
                 JumpTarget::Known {
@@ -357,11 +362,13 @@ impl<'a> BlockState<'a> {
             } else {
                 // TODO: this is actually a tail call
                 let addr = self.lower_val(*target);
-                JumpTarget::Unknown { addr }
+                let args = self.read_io_values(&flat_vars);
+                JumpTarget::Unknown { addr, args }
             }
         } else {
             let addr = self.lower_val(*target);
-            JumpTarget::Unknown { addr }
+            let args = self.read_io_values(&flat_vars);
+            JumpTarget::Unknown { addr, args }
         }
     }
 
@@ -428,14 +435,7 @@ impl<'a> BlockState<'a> {
             .map(|f| f.to_io().unwrap())
             .collect::<Vec<_>>();
 
-        let args = flat_vars
-            .iter()
-            .map(|flatvar| {
-                let var = self.get_var(*flatvar);
-                let val = self.state.builder.read_var(var);
-                (flatvar.to_io().unwrap(), val)
-            })
-            .collect::<_>();
+        let args = self.read_io_values(&flat_vars);
 
         let res = self.state.builder.ins().call(target, args, &return_types);
 
@@ -444,6 +444,17 @@ impl<'a> BlockState<'a> {
             let var = self.get_var(flatvar);
             self.state.builder.write_var(var, *res);
         }
+    }
+
+    fn read_io_values(&mut self, flat_vars: &[FlatVar]) -> super::io::IoValues {
+        flat_vars
+            .iter()
+            .map(|flatvar| {
+                let var = self.get_var(*flatvar);
+                let val = self.state.builder.read_var(var);
+                (flatvar.to_io().unwrap(), val)
+            })
+            .collect::<_>()
     }
 }
 
