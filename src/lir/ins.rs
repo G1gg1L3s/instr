@@ -288,6 +288,7 @@ impl std::fmt::Display for CallTarget {
 pub enum JumpTarget {
     Known { block: BlockId, args: Vec<ValueId> },
     Unknown { addr: ValueId, args: IoValues },
+    Tailcall { addr: Addr, args: IoValues },
 }
 
 impl std::fmt::Display for JumpTarget {
@@ -295,6 +296,7 @@ impl std::fmt::Display for JumpTarget {
         match self {
             JumpTarget::Known { block, args } => write!(f, "{block}{}", FmtList(args)),
             JumpTarget::Unknown { addr: val, args } => write!(f, "?{val}({args})"),
+            JumpTarget::Tailcall { addr, args } => write!(f, "tailcall {addr}({args})"),
         }
     }
 }
@@ -337,6 +339,9 @@ impl Terminator {
                 callback(addr);
                 args.values_mut().for_each(callback);
             }
+            JumpTarget::Tailcall { addr: _, args } => {
+                args.values_mut().for_each(callback);
+            }
         }
     }
 
@@ -360,6 +365,7 @@ impl Terminator {
         match self {
             Terminator::Jump(JumpTarget::Known { block, args }) => callback(*block, args),
             Terminator::Jump(JumpTarget::Unknown { .. }) => {}
+            Terminator::Jump(JumpTarget::Tailcall { .. }) => {}
             Terminator::Brif {
                 cond: _,
                 thenb,
@@ -381,6 +387,7 @@ impl Terminator {
         match self {
             Terminator::Jump(JumpTarget::Known { block, args }) => callback(*block, args),
             Terminator::Jump(JumpTarget::Unknown { .. }) => {}
+            Terminator::Jump(JumpTarget::Tailcall { .. }) => {}
             Terminator::Brif {
                 cond: _,
                 thenb,

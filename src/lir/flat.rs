@@ -203,6 +203,14 @@ fn reg_to_io(reg: flat_ir::Reg) -> Io {
     }
 }
 
+const FUNC_ARGS: [FlatVar; 5] = [
+    FlatVar::Mem,
+    FlatVar::Reg(flat_ir::Reg::Esp),
+    FlatVar::Reg(flat_ir::Reg::Eax),
+    FlatVar::Reg(flat_ir::Reg::Ecx),
+    FlatVar::Reg(flat_ir::Reg::Edx),
+];
+
 impl<'a> BlockState<'a> {
     pub fn get_var(&mut self, var: FlatVar) -> VarId {
         *self.state.registers.entry(var).or_insert_with(|| {
@@ -360,10 +368,8 @@ impl<'a> BlockState<'a> {
                     args: vec![],
                 }
             } else {
-                // TODO: this is actually a tail call
-                let addr = self.lower_val(*target);
-                let args = self.read_io_values(&flat_vars);
-                JumpTarget::Unknown { addr, args }
+                let args = self.read_io_values(&FUNC_ARGS);
+                JumpTarget::Tailcall { addr, args }
             }
         } else {
             let addr = self.lower_val(*target);
@@ -423,19 +429,12 @@ impl<'a> BlockState<'a> {
             CallTarget::Unknown { addr }
         };
 
-        let flat_vars = [
-            FlatVar::Mem,
-            FlatVar::Reg(flat_ir::Reg::Esp),
-            FlatVar::Reg(flat_ir::Reg::Eax),
-            FlatVar::Reg(flat_ir::Reg::Ecx),
-            FlatVar::Reg(flat_ir::Reg::Edx),
-        ];
-        let return_types = flat_vars
+        let return_types = FUNC_ARGS
             .iter()
             .map(|f| f.to_io().unwrap())
             .collect::<Vec<_>>();
 
-        let args = self.read_io_values(&flat_vars);
+        let args = self.read_io_values(&FUNC_ARGS);
 
         let res = self.state.builder.ins().call(target, args, &return_types);
 

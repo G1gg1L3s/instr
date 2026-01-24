@@ -76,6 +76,7 @@ impl<'a> InsBuilder<'a> {
                 self.func.blocks[*block].predecessors.push(self.block);
             }
             Terminator::Jump(JumpTarget::Unknown { .. }) => {}
+            Terminator::Jump(JumpTarget::Tailcall { .. }) => {}
             Terminator::Brif {
                 cond: _,
                 thenb,

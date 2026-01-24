@@ -319,6 +319,9 @@ fn format_target(
         JumpTarget::Unknown { addr, args } => {
             write!(f, "?{}({})", fmt.val(*addr), fmt.io_vals(args))?;
         }
+        JumpTarget::Tailcall { addr, args } => {
+            write!(f, "tailcall {}({})", addr, fmt.io_vals(args))?;
+        }
     })
 }
 
