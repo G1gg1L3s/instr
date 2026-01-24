@@ -1,8 +1,8 @@
 use crate::lir::{
     analysis::inverse_map,
     func::SsaFunction,
-    ins::{BinOp, Ins},
-    value::ValueId,
+    ins::{BinOp, Condition, Ins},
+    value::{Value, ValueId},
 };
 
 pub fn exec(func: &mut SsaFunction) {
@@ -12,6 +12,7 @@ pub fn exec(func: &mut SsaFunction) {
 
     enum Arg {
         Val(ValueId),
+        Imm(u8),
     }
 
     for (_, block) in func.blocks.iter_mut() {
@@ -40,7 +41,10 @@ pub fn exec(func: &mut SsaFunction) {
 
             match (cond, op) {
                 (c, BinOp::Sub) => {
-                    worklist.push((ins_id, c, Arg::Val(lhs), Arg::Val(rhs), dst));
+                    worklist.push((ins_id, c, lhs, Arg::Val(rhs), dst));
+                }
+                (Condition::Equal | Condition::NotEqual, BinOp::BitAnd) if lhs == rhs => {
+                    worklist.push((ins_id, cond, lhs, Arg::Imm(0), dst));
                 }
                 _ => {}
             }
@@ -48,11 +52,16 @@ pub fn exec(func: &mut SsaFunction) {
     }
 
     while let Some((ins_id, cond, lhs, rhs, dst)) = worklist.pop() {
-        let lhs = match lhs {
-            Arg::Val(v) => v,
-        };
         let rhs = match rhs {
             Arg::Val(v) => v,
+            Arg::Imm(x) => {
+                let Some(ty) = func.val_ty(lhs) else {
+                    log::warn!(">> Cannot derive type of {lhs}, skipping");
+                    continue;
+                };
+                let imm = ty.imm(x);
+                func.values.add(Value::Imm(imm))
+            }
         };
 
         func.ins[ins_id] = Ins::BinOp {
