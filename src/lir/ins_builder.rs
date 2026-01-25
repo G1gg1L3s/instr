@@ -63,7 +63,7 @@ impl<'a> InsBuilder<'a> {
     }
 
     pub fn unimplemented(&mut self) -> ValueId {
-        let dst = self.func.values.add(Value::Invalid);
+        let dst = self.func.values.add(Value::Todo);
         self.emit(Ins::Unimpl { dst });
         dst
     }

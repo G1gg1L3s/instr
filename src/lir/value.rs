@@ -49,7 +49,7 @@ impl Values {
     }
 
     pub fn val_ty(&self, val: ValueId) -> Option<Ty> {
-        let value = dbg!(&self[val]);
+        let value = &self[val];
         match value {
             Value::Invalid => None,
             Value::Todo => None,
