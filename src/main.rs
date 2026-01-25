@@ -105,6 +105,7 @@ fn main() {
         let mut ssa_func = lir::flat::func_from_flat(func, &blocks);
         ssa_func.resolve();
         lir::analysis::reconstruct_comp::exec(&mut ssa_func);
+        lir::analysis::propagate_constant::exec(&mut ssa_func);
         println!("{}", ssa_func.fmt());
     }
 
