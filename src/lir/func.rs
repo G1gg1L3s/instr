@@ -98,25 +98,7 @@ impl SsaFunction {
     }
 
     pub fn instr_result(&self, ins: InsId) -> heapless::Vec<ValueId, 16> {
-        let mut res = heapless::Vec::<ValueId, 16>::new();
-        let ins = &self.ins[ins];
-        match ins {
-            Ins::Hole => {}
-            Ins::Uninit { dst } => res.push(*dst).unwrap(),
-            Ins::BinOp { dst, flags, .. } => {
-                res.push(*dst).unwrap();
-                if let Some(flags) = flags {
-                    res.push(*flags).unwrap()
-                }
-            }
-            Ins::Unimpl { dst } => res.push(*dst).unwrap(),
-            Ins::Load { dst, .. } => res.push(*dst).unwrap(),
-            Ins::Cond { dst, .. } => res.push(*dst).unwrap(),
-            Ins::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
-            Ins::Call { result, .. } => res.extend(result.values()),
-        }
-
-        res
+        self.ins[ins].instr_result()
     }
 
     pub fn val_ty(&self, val: ValueId) -> Option<Ty> {

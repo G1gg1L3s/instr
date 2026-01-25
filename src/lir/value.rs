@@ -70,6 +70,10 @@ impl Values {
 
         val
     }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 #[derive(Debug, Clone)]

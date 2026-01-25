@@ -27,9 +27,12 @@ impl Instrs {
         InsKeys(0..max)
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (InsId, &Ins)> {
+        self.keys().zip(self.0.iter())
+    }
+
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (InsId, &mut Ins)> {
-        let keys = self.keys();
-        keys.zip(self.0.iter_mut())
+        self.keys().zip(self.0.iter_mut())
     }
 }
 
@@ -219,6 +222,99 @@ impl Ins {
             }
         }
     }
+
+    pub fn visit_arg_values(&self, mut callback: impl FnMut(ValueId)) {
+        match self {
+            Ins::Hole => {}
+            Ins::BinOp {
+                op: _,
+                dst: _,
+                lhs,
+                rhs,
+                flags: _,
+            } => {
+                callback(*lhs);
+                callback(*rhs);
+            }
+            Ins::Uninit { .. } => {}
+            Ins::Unimpl { .. } => {}
+            Ins::Load {
+                dst: _,
+                addr,
+                mem,
+                space: _,
+            } => {
+                callback(*addr);
+                callback(*mem);
+            }
+            Ins::Store {
+                dst_mem: _,
+                src_mem,
+                addr,
+                value,
+                space: _,
+            } => {
+                callback(*src_mem);
+                callback(*addr);
+                callback(*value);
+            }
+            Ins::Cond {
+                dst: _,
+                flags,
+                cond: _,
+            } => {
+                callback(*flags);
+            }
+            Ins::Call {
+                result: _,
+                target,
+                args,
+            } => {
+                for arg in args.values() {
+                    callback(arg);
+                }
+
+                match target {
+                    CallTarget::Known { addr: _ } => {}
+                    CallTarget::Unknown { addr } => callback(*addr),
+                }
+            }
+        }
+    }
+
+    pub fn has_side_effects(&self) -> bool {
+        match self {
+            Ins::Hole => false,
+            Ins::BinOp { .. } => false,
+            Ins::Uninit { .. } => false,
+            Ins::Unimpl { .. } => true,
+            Ins::Load { .. } => false,
+            Ins::Store { .. } => true,
+            Ins::Cond { .. } => false,
+            Ins::Call { .. } => true,
+        }
+    }
+
+    pub fn instr_result(&self) -> heapless::Vec<ValueId, 16> {
+        let mut res = heapless::Vec::<ValueId, 16>::new();
+        match self {
+            Ins::Hole => {}
+            Ins::Uninit { dst } => res.push(*dst).unwrap(),
+            Ins::BinOp { dst, flags, .. } => {
+                res.push(*dst).unwrap();
+                if let Some(flags) = flags {
+                    res.push(*flags).unwrap()
+                }
+            }
+            Ins::Unimpl { dst } => res.push(*dst).unwrap(),
+            Ins::Load { dst, .. } => res.push(*dst).unwrap(),
+            Ins::Cond { dst, .. } => res.push(*dst).unwrap(),
+            Ins::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
+            Ins::Call { result, .. } => res.extend(result.values()),
+        }
+
+        res
+    }
 }
 
 impl std::fmt::Display for Ins {
@@ -330,7 +426,22 @@ impl std::fmt::Display for Terminator {
 }
 
 impl Terminator {
-    fn visit_target(jp: &mut JumpTarget, mut callback: impl FnMut(&mut ValueId)) {
+    fn visit_target(jp: &JumpTarget, mut callback: impl FnMut(ValueId)) {
+        match jp {
+            JumpTarget::Known { block: _, args } => {
+                args.iter().copied().map(callback).count();
+            }
+            JumpTarget::Unknown { addr, args } => {
+                callback(*addr);
+                args.values().for_each(callback);
+            }
+            JumpTarget::Tailcall { addr: _, args } => {
+                args.values().for_each(callback);
+            }
+        }
+    }
+
+    fn visit_target_mut(jp: &mut JumpTarget, mut callback: impl FnMut(&mut ValueId)) {
         match jp {
             JumpTarget::Known { block: _, args } => {
                 args.iter_mut().map(callback).count();
@@ -345,15 +456,31 @@ impl Terminator {
         }
     }
 
-    pub fn visit_values_mut(&mut self, mut callback: impl FnMut(&mut ValueId)) {
+    pub fn visit_values(&self, mut callback: impl FnMut(ValueId)) {
         match self {
             Terminator::Jump(jp) => {
                 Self::visit_target(jp, callback);
             }
             Terminator::Brif { cond, thenb, elseb } => {
-                callback(cond);
+                callback(*cond);
                 Self::visit_target(thenb, &mut callback);
                 Self::visit_target(elseb, &mut callback);
+            }
+            Terminator::Ret { adjust: _, args } => {
+                args.values().for_each(callback);
+            }
+        }
+    }
+
+    pub fn visit_values_mut(&mut self, mut callback: impl FnMut(&mut ValueId)) {
+        match self {
+            Terminator::Jump(jp) => {
+                Self::visit_target_mut(jp, callback);
+            }
+            Terminator::Brif { cond, thenb, elseb } => {
+                callback(cond);
+                Self::visit_target_mut(thenb, &mut callback);
+                Self::visit_target_mut(elseb, &mut callback);
             }
             Terminator::Ret { adjust: _, args } => {
                 args.values_mut().map(callback).count();
