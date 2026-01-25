@@ -61,6 +61,10 @@ impl Blocks {
         self.0.iter()
     }
 
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Block> {
+        self.0.iter_mut()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (BlockId, &Block)> {
         self.keys().zip(self.0.iter())
     }

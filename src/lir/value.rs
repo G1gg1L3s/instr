@@ -17,6 +17,7 @@ impl ValueId {
 #[derive(Debug, Clone)]
 pub enum Value {
     Invalid,
+    Todo,
     Mem,
     Temp { ty: Ty },
     Alias { to: ValueId },
@@ -41,6 +42,33 @@ impl Values {
 
     pub fn iter(&self) -> impl Iterator<Item = (ValueId, &Value)> {
         self.keys().zip(self.0.iter())
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &Value> {
+        self.0.iter()
+    }
+
+    pub fn val_ty(&self, val: ValueId) -> Option<Ty> {
+        let value = dbg!(&self[val]);
+        match value {
+            Value::Invalid => None,
+            Value::Todo => None,
+            Value::Temp { ty } => Some(*ty),
+            Value::Alias { .. } => self.val_ty(self.resolve_alias(val)),
+            Value::Mem => None,
+            Value::Imm(x) => Some(x.ty()),
+        }
+    }
+
+    pub fn resolve_alias(&self, mut val: ValueId) -> ValueId {
+        for _ in self.keys() {
+            match self[val] {
+                Value::Alias { to } => val = to,
+                _ => break,
+            }
+        }
+
+        val
     }
 }
 

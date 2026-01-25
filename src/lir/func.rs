@@ -49,15 +49,8 @@ impl SsaFunction {
         self.values[from] = Value::Alias { to };
     }
 
-    pub fn resolve_alias(&self, mut val: ValueId) -> ValueId {
-        for _ in self.values.keys() {
-            match self.values[val] {
-                Value::Alias { to } => val = to,
-                _ => break,
-            }
-        }
-
-        val
+    pub fn resolve_alias(&self, val: ValueId) -> ValueId {
+        self.values.resolve_alias(val)
     }
 
     pub fn patch_remove_block_param(&mut self, block_id: BlockId, value: ValueId) -> usize {
@@ -108,6 +101,7 @@ impl SsaFunction {
         let mut res = heapless::Vec::<ValueId, 16>::new();
         let ins = &self.ins[ins];
         match ins {
+            Ins::Hole => {}
             Ins::Uninit { dst } => res.push(*dst).unwrap(),
             Ins::BinOp { dst, flags, .. } => {
                 res.push(*dst).unwrap();
@@ -129,6 +123,7 @@ impl SsaFunction {
         let value = &self.values[val];
         match value {
             Value::Invalid => None,
+            Value::Todo => None,
             Value::Temp { ty } => Some(*ty),
             Value::Alias { .. } => self.val_ty(self.resolve_alias(val)),
             Value::Mem => None,

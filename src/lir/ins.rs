@@ -109,6 +109,7 @@ impl std::fmt::Display for BinOp {
 
 #[derive(Debug, Clone)]
 pub enum Ins {
+    Hole,
     BinOp {
         op: BinOp,
         dst: ValueId,
@@ -157,6 +158,7 @@ impl Ins {
 
     pub fn visit_values_mut(&mut self, mut callback: impl FnMut(&mut ValueId)) {
         match self {
+            Ins::Hole => {}
             Ins::BinOp {
                 op: _,
                 dst,
@@ -222,6 +224,7 @@ impl Ins {
 impl std::fmt::Display for Ins {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Ins::Hole => write!(f, "hole"),
             Ins::BinOp {
                 op,
                 dst,

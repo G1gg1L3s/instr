@@ -63,6 +63,7 @@ impl<'a> Display for InsFmt<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ins = &self.fmt.func.ins[self.ins];
         match ins {
+            Ins::Hole => write!(f, "hole"),
             Ins::BinOp {
                 op,
                 dst,
@@ -148,6 +149,7 @@ impl<'a> Display for ValueFmt<'a> {
         let val = &self.fmt.func.values[self.val];
         match val {
             Value::Invalid => write!(f, "invalid{}", self.val.id()),
+            Value::Todo => write!(f, "todo{}", self.val.id()),
             Value::Temp {
                 ty: Ty::Flags(flags),
             } => write!(f, "{}#{}", FlagsGroup::new(*flags), self.val.id()),

@@ -1,11 +1,17 @@
 use std::collections::HashMap;
 
-use crate::lir::{block::BlockId, func::SsaFunction, ins::InsId, value::ValueId};
+use crate::lir::{
+    block::BlockId,
+    func::SsaFunction,
+    ins::InsId,
+    value::{Imm, Value, ValueId},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub enum ValueSource {
     Ins(InsId),
     Param { block: BlockId, idx: usize },
+    Imm(Imm),
 }
 
 pub fn compute_value_dest(func: &SsaFunction) -> HashMap<ValueId, ValueSource> {
@@ -36,5 +42,16 @@ pub fn compute_value_dest(func: &SsaFunction) -> HashMap<ValueId, ValueSource> {
             }
         }
     }
+
+    for (val_id, val) in func.values.iter() {
+        let Value::Imm(imm) = val else {
+            continue;
+        };
+        let old = res.insert(val_id, ValueSource::Imm(*imm));
+        if let Some(old) = old {
+            panic!("value {val_id} is defined twice, first time: {old:?}, second time: {val:?}")
+        }
+    }
+
     res
 }
