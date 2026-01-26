@@ -1,4 +1,5 @@
 pub mod const_folding;
 pub mod dce;
 pub mod def_use;
+pub mod reassociate;
 pub mod reconstruct_comp;

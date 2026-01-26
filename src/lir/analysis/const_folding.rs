@@ -90,6 +90,8 @@ macro_rules! match_bin_imm {
     }};
 }
 
+pub(crate) use match_bin_imm;
+
 fn compute_const(op: BinOp, lhs: Imm, rhs: Imm) -> Option<Imm> {
     Some(match_bin_imm!((lhs, rhs), (x, y) => match op {
         BinOp::Add => x.wrapping_add(y),

@@ -112,6 +112,13 @@ fn main() {
                 break;
             }
         }
+
+        loop {
+            let changed = lir::analysis::reassociate::run(&mut ssa_func);
+            if !changed {
+                break;
+            }
+        }
         println!("{}", ssa_func.fmt());
     }
 
