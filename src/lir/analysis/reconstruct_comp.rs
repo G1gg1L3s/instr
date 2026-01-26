@@ -1,12 +1,12 @@
 use crate::lir::{
-    analysis::inverse_map::{self, ValueSource},
+    analysis::def_use::{self, ValueSource},
     func::SsaFunction,
     ins::{BinOp, Condition, Ins},
     value::{Value, ValueId},
 };
 
 pub fn exec(func: &mut SsaFunction) {
-    let val_to_ins = inverse_map::compute_value_dest(func);
+    let val_to_ins = def_use::compute(func);
 
     let mut worklist = vec![];
 

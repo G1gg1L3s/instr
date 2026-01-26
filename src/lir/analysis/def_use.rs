@@ -14,7 +14,7 @@ pub enum ValueSource {
     Imm(Imm),
 }
 
-pub fn compute_value_dest(func: &SsaFunction) -> HashMap<ValueId, ValueSource> {
+pub fn compute(func: &SsaFunction) -> HashMap<ValueId, ValueSource> {
     let mut res = HashMap::new();
     for block in func.blocks.values() {
         for (idx, value) in block.params.iter().enumerate() {

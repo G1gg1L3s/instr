@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::lir::{analysis::inverse_map, func::SsaFunction, ins::Ins, value::ValueId};
+use crate::lir::{analysis::def_use, func::SsaFunction, ins::Ins, value::ValueId};
 
 fn compute_uses(func: &SsaFunction) -> HashMap<ValueId, usize> {
     let mut uses = HashMap::with_capacity(func.values.len());
@@ -21,7 +21,7 @@ fn compute_uses(func: &SsaFunction) -> HashMap<ValueId, usize> {
 }
 
 pub fn exec(func: &mut SsaFunction) {
-    let def_of = inverse_map::compute_value_dest(func);
+    let def_of = def_use::compute(func);
     let mut uses = compute_uses(func);
 
     for (_, ins) in func.ins.iter_mut() {
@@ -69,7 +69,7 @@ pub fn exec(func: &mut SsaFunction) {
                 }
 
                 match def_of.get(&v) {
-                    Some(inverse_map::ValueSource::Ins(def_ins_id)) => {
+                    Some(def_use::ValueSource::Ins(def_ins_id)) => {
                         if !func.ins[*def_ins_id].has_side_effects() {
                             worklist.push_back(*def_ins_id);
                         }
