@@ -106,7 +106,12 @@ fn main() {
         ssa_func.resolve();
         lir::analysis::reconstruct_comp::exec(&mut ssa_func);
         lir::analysis::dce::exec(&mut ssa_func);
-        lir::analysis::propagate_constant::exec(&mut ssa_func);
+        loop {
+            let changed = lir::analysis::const_folding::run(&mut ssa_func);
+            if !changed {
+                break;
+            }
+        }
         println!("{}", ssa_func.fmt());
     }
 

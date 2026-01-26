@@ -5,7 +5,7 @@ use crate::{
     lir::{
         block::{BlockId, Blocks},
         fmt::FuncFmt,
-        ins::{Ins, InsId, Instrs},
+        ins::{InsId, Instrs},
         ins_builder::InsBuilder,
         io::{Io, IoValues},
         ty::Ty,
