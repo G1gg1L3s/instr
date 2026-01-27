@@ -1,6 +1,6 @@
 use crate::lir::{
     func::SsaFunction,
-    ins::{BinOp, Ins},
+    ins::{BinOp, Ins, InsKind},
     value::{Imm, Value, Values},
 };
 
@@ -16,13 +16,13 @@ pub fn run(func: &mut SsaFunction) -> bool {
 }
 
 fn fold_ins(ins: &mut Ins, values: &mut Values) -> bool {
-    let Ins::BinOp {
+    let InsKind::BinOp {
         op,
         dst,
         lhs,
         rhs,
         flags: None,
-    } = ins
+    } = &ins.kind
     else {
         return false;
     };
@@ -34,7 +34,7 @@ fn fold_ins(ins: &mut Ins, values: &mut Values) -> bool {
         };
         log::trace!(">> Folding {dst} = {lhs} {op} {rhs} into {dst} = {imm}");
         values[*dst] = Value::Imm(imm);
-        *ins = Ins::Hole;
+        ins.kind = InsKind::Hole;
         return true;
     }
 
@@ -45,7 +45,7 @@ fn fold_ins(ins: &mut Ins, values: &mut Values) -> bool {
         if let Some(res) = compute_const(*op, *lhs_imm, *rhs_imm) {
             log::trace!(">> Folding {dst} = {lhs} {op} {rhs} into {dst} = {res}");
             values[*dst] = Value::Imm(res);
-            *ins = Ins::Hole;
+            ins.kind = InsKind::Hole;
             return true;
         }
     };
@@ -53,7 +53,7 @@ fn fold_ins(ins: &mut Ins, values: &mut Values) -> bool {
     if let (BinOp::BitOr, Some(res)) = (*op, to_0xff_imm(lhs_val).or(to_0xff_imm(rhs_val))) {
         log::info!(">> Folding {dst} = {lhs} {op} {rhs} into {dst} = {res}");
         values[*dst] = Value::Imm(res);
-        *ins = Ins::Hole;
+        ins.kind = InsKind::Hole;
         return true;
     }
 

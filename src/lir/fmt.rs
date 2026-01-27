@@ -4,7 +4,7 @@ use crate::lir::{
     block::Block,
     flags::FlagsGroup,
     func::SsaFunction,
-    ins::{InsId, JumpTarget, Terminator},
+    ins::{InsId, InsKind, JumpTarget, Terminator},
     io::IoValues,
     ty::Ty,
     value::{Value, ValueId},
@@ -62,9 +62,9 @@ pub struct TyFmt {
 impl<'a> Display for InsFmt<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let ins = &self.fmt.func.ins[self.ins];
-        match ins {
-            Ins::Hole => write!(f, "hole"),
-            Ins::BinOp {
+        match &ins.kind {
+            InsKind::Hole => write!(f, "hole"),
+            InsKind::BinOp {
                 op,
                 dst,
                 lhs,
@@ -82,11 +82,11 @@ impl<'a> Display for InsFmt<'a> {
                     write!(f, "{dst} = {lhs} {op} {rhs}")
                 }
             }
-            Ins::Uninit { dst } => {
+            InsKind::Uninit { dst } => {
                 write!(f, "{} = ???", self.fmt.val(*dst),)
             }
-            Ins::Unimpl { dst } => write!(f, "{} = unimplemented", self.fmt.val(*dst)),
-            Ins::Load {
+            InsKind::Unimpl { dst } => write!(f, "{} = unimplemented", self.fmt.val(*dst)),
+            InsKind::Load {
                 dst,
                 addr,
                 mem,
@@ -101,7 +101,7 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*addr)
                 )
             }
-            Ins::Store {
+            InsKind::Store {
                 dst_mem,
                 src_mem,
                 addr,
@@ -119,7 +119,7 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*value)
                 )
             }
-            Ins::Cond {
+            InsKind::Cond {
                 dst,
                 flags: src,
                 cond,
@@ -129,7 +129,7 @@ impl<'a> Display for InsFmt<'a> {
                 self.fmt.val(*dst),
                 self.fmt.val(*src)
             ),
-            Ins::Call {
+            InsKind::Call {
                 result,
                 target,
                 args,

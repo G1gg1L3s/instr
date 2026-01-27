@@ -1,6 +1,11 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::lir::{analysis::def_use, func::SsaFunction, ins::Ins, value::ValueId};
+use crate::lir::{
+    analysis::def_use,
+    func::SsaFunction,
+    ins::{Ins, InsKind},
+    value::ValueId,
+};
 
 fn compute_uses(func: &SsaFunction) -> HashMap<ValueId, usize> {
     let mut uses = HashMap::with_capacity(func.values.len());
@@ -25,7 +30,7 @@ pub fn exec(func: &mut SsaFunction) {
     let mut uses = compute_uses(func);
 
     for (_, ins) in func.ins.iter_mut() {
-        if let Ins::BinOp { flags, .. } = ins {
+        if let InsKind::BinOp { flags, .. } = &mut ins.kind {
             if let Some(f) = flags {
                 if uses.get(&f).copied().unwrap_or(0) == 0 {
                     *flags = None;
@@ -84,12 +89,12 @@ pub fn exec(func: &mut SsaFunction) {
     }
 
     for ins_id in removed {
-        func.ins[ins_id] = Ins::Hole;
+        func.ins[ins_id].kind = InsKind::Hole;
     }
 
     for block in func.blocks.values_mut() {
         block
             .ins
-            .retain(|&ins_id| !matches!(func.ins[ins_id], Ins::Hole));
+            .retain(|&ins_id| !matches!(func.ins[ins_id].kind, InsKind::Hole));
     }
 }

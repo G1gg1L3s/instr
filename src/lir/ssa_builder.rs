@@ -117,6 +117,10 @@ impl SsaBuilder {
         self.func.add_input_arg(arg, param);
     }
 
+    pub fn ins_addr(&mut self, addr: Addr) -> InsBuilder<'_> {
+        self.func.ins_addr(self.current_block.unwrap(), addr)
+    }
+
     pub fn ins(&mut self) -> InsBuilder<'_> {
         self.func.ins(self.current_block.unwrap())
     }

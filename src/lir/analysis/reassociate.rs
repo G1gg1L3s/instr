@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::lir::{
     analysis::def_use,
     func::SsaFunction,
-    ins::{BinOp, Ins, InsId, Instrs},
+    ins::{BinOp, Ins, InsId, InsKind, Instrs},
     value::{Imm, Value, ValueId, Values},
 };
 
@@ -23,13 +23,13 @@ fn reassoc_ins(
     values: &mut Values,
     def_use: &HashMap<ValueId, def_use::ValueSource>,
 ) -> bool {
-    let &Ins::BinOp {
+    let &InsKind::BinOp {
         op: op2 @ (BinOp::Add | BinOp::Sub),
         dst,
         lhs,
         rhs,
         flags: None,
-    } = &ins[ins_id]
+    } = &ins[ins_id].kind
     else {
         return false;
     };
@@ -48,13 +48,13 @@ fn reassoc_ins(
         _ => return false,
     };
 
-    let &Ins::BinOp {
+    let &InsKind::BinOp {
         op: op1 @ (BinOp::Add | BinOp::Sub),
         lhs: a,
         rhs: b,
         flags: None,
         dst: dst_1,
-    } = &ins[def_ins]
+    } = &ins[def_ins].kind
     else {
         return false;
     };
@@ -95,7 +95,7 @@ fn reassoc_ins(
         ">> Optimising: {dst} = {lhs} {op2} {rhs} and {dst_1} = {a} {op1} {b} => {dst} = {res_lhs} {res_op} {res_rhs}"
     );
 
-    ins[ins_id] = Ins::BinOp {
+    ins[ins_id].kind = InsKind::BinOp {
         op: res_op,
         dst,
         lhs: res_lhs,

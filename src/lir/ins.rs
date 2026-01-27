@@ -111,7 +111,7 @@ impl std::fmt::Display for BinOp {
 }
 
 #[derive(Debug, Clone)]
-pub enum Ins {
+pub enum InsKind {
     Hole,
     BinOp {
         op: BinOp,
@@ -150,7 +150,25 @@ pub enum Ins {
         args: IoValues,
     },
 }
+
+#[derive(Debug, Clone)]
+pub struct Ins {
+    pub addr: Option<Addr>,
+    pub kind: InsKind,
+}
+
 impl Ins {
+    pub fn new(addr: impl Into<Option<Addr>>, kind: InsKind) -> Self {
+        Self {
+            addr: addr.into(),
+            kind,
+        }
+    }
+
+    pub fn without_address(kind: InsKind) -> Self {
+        Self { addr: None, kind }
+    }
+
     pub fn patch_replace_value(&mut self, from: ValueId, to: ValueId) {
         self.visit_values_mut(|val| {
             if *val == from {
@@ -160,9 +178,9 @@ impl Ins {
     }
 
     pub fn visit_values_mut(&mut self, mut callback: impl FnMut(&mut ValueId)) {
-        match self {
-            Ins::Hole => {}
-            Ins::BinOp {
+        match &mut self.kind {
+            InsKind::Hole => {}
+            InsKind::BinOp {
                 op: _,
                 dst,
                 lhs,
@@ -174,9 +192,9 @@ impl Ins {
                 callback(rhs);
                 flags.as_mut().map(callback);
             }
-            Ins::Uninit { dst } => callback(dst),
-            Ins::Unimpl { dst } => callback(dst),
-            Ins::Load {
+            InsKind::Uninit { dst } => callback(dst),
+            InsKind::Unimpl { dst } => callback(dst),
+            InsKind::Load {
                 dst,
                 addr,
                 mem,
@@ -186,7 +204,7 @@ impl Ins {
                 callback(addr);
                 callback(mem);
             }
-            Ins::Store {
+            InsKind::Store {
                 dst_mem,
                 src_mem,
                 addr,
@@ -198,7 +216,7 @@ impl Ins {
                 callback(addr);
                 callback(value);
             }
-            Ins::Cond {
+            InsKind::Cond {
                 dst,
                 flags,
                 cond: _,
@@ -206,7 +224,7 @@ impl Ins {
                 callback(dst);
                 callback(flags);
             }
-            Ins::Call {
+            InsKind::Call {
                 result,
                 target,
                 args,
@@ -224,9 +242,9 @@ impl Ins {
     }
 
     pub fn visit_arg_values(&self, mut callback: impl FnMut(ValueId)) {
-        match self {
-            Ins::Hole => {}
-            Ins::BinOp {
+        match &self.kind {
+            InsKind::Hole => {}
+            InsKind::BinOp {
                 op: _,
                 dst: _,
                 lhs,
@@ -236,9 +254,9 @@ impl Ins {
                 callback(*lhs);
                 callback(*rhs);
             }
-            Ins::Uninit { .. } => {}
-            Ins::Unimpl { .. } => {}
-            Ins::Load {
+            InsKind::Uninit { .. } => {}
+            InsKind::Unimpl { .. } => {}
+            InsKind::Load {
                 dst: _,
                 addr,
                 mem,
@@ -247,7 +265,7 @@ impl Ins {
                 callback(*addr);
                 callback(*mem);
             }
-            Ins::Store {
+            InsKind::Store {
                 dst_mem: _,
                 src_mem,
                 addr,
@@ -258,14 +276,14 @@ impl Ins {
                 callback(*addr);
                 callback(*value);
             }
-            Ins::Cond {
+            InsKind::Cond {
                 dst: _,
                 flags,
                 cond: _,
             } => {
                 callback(*flags);
             }
-            Ins::Call {
+            InsKind::Call {
                 result: _,
                 target,
                 args,
@@ -283,34 +301,34 @@ impl Ins {
     }
 
     pub fn has_side_effects(&self) -> bool {
-        match self {
-            Ins::Hole => false,
-            Ins::BinOp { .. } => false,
-            Ins::Uninit { .. } => false,
-            Ins::Unimpl { .. } => true,
-            Ins::Load { .. } => false,
-            Ins::Store { .. } => true,
-            Ins::Cond { .. } => false,
-            Ins::Call { .. } => true,
+        match &self.kind {
+            InsKind::Hole => false,
+            InsKind::BinOp { .. } => false,
+            InsKind::Uninit { .. } => false,
+            InsKind::Unimpl { .. } => true,
+            InsKind::Load { .. } => false,
+            InsKind::Store { .. } => true,
+            InsKind::Cond { .. } => false,
+            InsKind::Call { .. } => true,
         }
     }
 
     pub fn instr_result(&self) -> heapless::Vec<ValueId, 16> {
         let mut res = heapless::Vec::<ValueId, 16>::new();
-        match self {
-            Ins::Hole => {}
-            Ins::Uninit { dst } => res.push(*dst).unwrap(),
-            Ins::BinOp { dst, flags, .. } => {
+        match &self.kind {
+            InsKind::Hole => {}
+            InsKind::Uninit { dst } => res.push(*dst).unwrap(),
+            InsKind::BinOp { dst, flags, .. } => {
                 res.push(*dst).unwrap();
                 if let Some(flags) = flags {
                     res.push(*flags).unwrap()
                 }
             }
-            Ins::Unimpl { dst } => res.push(*dst).unwrap(),
-            Ins::Load { dst, .. } => res.push(*dst).unwrap(),
-            Ins::Cond { dst, .. } => res.push(*dst).unwrap(),
-            Ins::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
-            Ins::Call { result, .. } => res.extend(result.values()),
+            InsKind::Unimpl { dst } => res.push(*dst).unwrap(),
+            InsKind::Load { dst, .. } => res.push(*dst).unwrap(),
+            InsKind::Cond { dst, .. } => res.push(*dst).unwrap(),
+            InsKind::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
+            InsKind::Call { result, .. } => res.extend(result.values()),
         }
 
         res
@@ -319,9 +337,9 @@ impl Ins {
 
 impl std::fmt::Display for Ins {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Ins::Hole => write!(f, "hole"),
-            Ins::BinOp {
+        match &self.kind {
+            InsKind::Hole => write!(f, "hole"),
+            InsKind::BinOp {
                 op,
                 dst,
                 lhs,
@@ -334,27 +352,27 @@ impl std::fmt::Display for Ins {
                     write!(f, "{dst} = {lhs} {op} {rhs}")
                 }
             }
-            Ins::Uninit { dst } => write!(f, "{dst} = ???"),
-            Ins::Unimpl { dst } => write!(f, "{dst} = unimplemented"),
-            Ins::Load {
+            InsKind::Uninit { dst } => write!(f, "{dst} = ???"),
+            InsKind::Unimpl { dst } => write!(f, "{dst} = unimplemented"),
+            InsKind::Load {
                 dst,
                 addr,
                 space,
                 mem,
             } => write!(f, "{dst} = load {mem} {space}[{addr}]"),
-            Ins::Store {
+            InsKind::Store {
                 dst_mem,
                 src_mem,
                 addr,
                 value: src,
                 space,
             } => write!(f, "{dst_mem} = store {src_mem} {space}[{addr}] <- {src}"),
-            Ins::Cond {
+            InsKind::Cond {
                 dst,
                 flags: src,
                 cond,
             } => write!(f, "{dst} = cond({cond}) {src}"),
-            Ins::Call {
+            InsKind::Call {
                 result,
                 target,
                 args,

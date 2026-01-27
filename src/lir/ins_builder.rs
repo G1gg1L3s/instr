@@ -1,11 +1,14 @@
-use crate::lir::{
-    block::BlockId,
-    flags::FlagsGroup,
-    func::SsaFunction,
-    ins::{BinOp, CallTarget, Condition, Ins, JumpTarget, MemSpace, Terminator},
-    io::{Io, IoValues},
-    ty::Ty,
-    value::{Imm, ValueId},
+use crate::{
+    addr::Addr,
+    lir::{
+        block::BlockId,
+        flags::FlagsGroup,
+        func::SsaFunction,
+        ins::{BinOp, CallTarget, Condition, Ins, InsKind, JumpTarget, MemSpace, Terminator},
+        io::{Io, IoValues},
+        ty::Ty,
+        value::{Imm, ValueId},
+    },
 };
 
 use super::value::Value;
@@ -13,18 +16,22 @@ use super::value::Value;
 pub struct InsBuilder<'a> {
     pub func: &'a mut SsaFunction,
     pub block: BlockId,
+    pub addr: Option<Addr>,
 }
 
 impl<'a> InsBuilder<'a> {
     pub fn prepend_uninit_read(&mut self) -> ValueId {
         let dst = self.func.values.add(Value::Invalid);
-        let ins = self.func.ins.add(Ins::Uninit { dst });
+        let ins = self
+            .func
+            .ins
+            .add(Ins::new(self.addr, InsKind::Uninit { dst }));
         self.func.blocks[self.block].ins.insert(0, ins);
         dst
     }
 
-    pub fn emit(&mut self, ins: Ins) {
-        let ins = self.func.ins.add(ins);
+    pub fn emit(&mut self, ins: InsKind) {
+        let ins = self.func.ins.add(Ins::new(self.addr, ins));
         self.func.blocks[self.block].ins.push(ins);
     }
 
@@ -51,7 +58,7 @@ impl<'a> InsBuilder<'a> {
             })
         });
 
-        self.emit(Ins::BinOp {
+        self.emit(InsKind::BinOp {
             op,
             dst,
             lhs,
@@ -64,7 +71,7 @@ impl<'a> InsBuilder<'a> {
 
     pub fn unimplemented(&mut self) -> ValueId {
         let dst = self.func.values.add(Value::Todo);
-        self.emit(Ins::Unimpl { dst });
+        self.emit(InsKind::Unimpl { dst });
         dst
     }
 
@@ -112,7 +119,7 @@ impl<'a> InsBuilder<'a> {
             .map(|io| (*io, self.func.values.add(Value::Temp { ty: io.ty() })))
             .collect::<IoValues>();
 
-        self.emit(Ins::Call {
+        self.emit(InsKind::Call {
             result: result.clone(),
             target,
             args,
@@ -122,7 +129,7 @@ impl<'a> InsBuilder<'a> {
 
     pub fn load(&mut self, ty: Ty, addr: ValueId, mem: ValueId, space: MemSpace) -> ValueId {
         let dst = self.func.values.add(Value::Temp { ty });
-        self.emit(Ins::Load {
+        self.emit(InsKind::Load {
             dst,
             addr,
             mem,
@@ -139,7 +146,7 @@ impl<'a> InsBuilder<'a> {
         space: MemSpace,
     ) -> ValueId {
         let dst_mem = self.func.values.add(Value::Mem);
-        self.emit(Ins::Store {
+        self.emit(InsKind::Store {
             dst_mem,
             src_mem: mem,
             addr,
@@ -151,7 +158,7 @@ impl<'a> InsBuilder<'a> {
 
     pub fn cond(&mut self, cond: Condition, flags: ValueId) -> ValueId {
         let dst = self.func.values.add(Value::Temp { ty: Ty::Bool });
-        self.emit(Ins::Cond { dst, flags, cond });
+        self.emit(InsKind::Cond { dst, flags, cond });
         dst
     }
 }

@@ -42,7 +42,19 @@ impl SsaFunction {
     }
 
     pub fn ins(&mut self, block: BlockId) -> InsBuilder<'_> {
-        InsBuilder { func: self, block }
+        InsBuilder {
+            func: self,
+            block,
+            addr: None,
+        }
+    }
+
+    pub fn ins_addr(&mut self, block: BlockId, addr: Addr) -> InsBuilder<'_> {
+        InsBuilder {
+            func: self,
+            block,
+            addr: Some(addr),
+        }
     }
 
     pub fn set_alias(&mut self, from: ValueId, to: ValueId) {
