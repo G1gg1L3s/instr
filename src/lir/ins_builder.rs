@@ -4,7 +4,10 @@ use crate::{
         block::BlockId,
         flags::FlagsGroup,
         func::SsaFunction,
-        ins::{BinOp, CallTarget, Condition, Ins, InsKind, JumpTarget, MemSpace, Terminator},
+        ins::{
+            BinOp, CallTarget, Condition, Ins, InsKind, JumpTarget, MemSpace, Terminator,
+            TerminatorKind,
+        },
         io::{Io, IoValues},
         ty::Ty,
         value::{Imm, ValueId},
@@ -75,14 +78,14 @@ impl<'a> InsBuilder<'a> {
         dst
     }
 
-    pub fn terminator(&mut self, term: Terminator) {
+    pub fn terminator(&mut self, term: TerminatorKind) {
         match &term {
-            Terminator::Jump(JumpTarget::Known { block, args: _ }) => {
+            TerminatorKind::Jump(JumpTarget::Known { block, args: _ }) => {
                 self.func.blocks[*block].predecessors.push(self.block);
             }
-            Terminator::Jump(JumpTarget::Unknown { .. }) => {}
-            Terminator::Jump(JumpTarget::Tailcall { .. }) => {}
-            Terminator::Brif {
+            TerminatorKind::Jump(JumpTarget::Unknown { .. }) => {}
+            TerminatorKind::Jump(JumpTarget::Tailcall { .. }) => {}
+            TerminatorKind::Brif {
                 cond: _,
                 thenb,
                 elseb,
@@ -94,23 +97,24 @@ impl<'a> InsBuilder<'a> {
                     self.func.blocks[*block].predecessors.push(self.block);
                 }
             }
-            Terminator::Ret { .. } => {}
+            TerminatorKind::Ret { .. } => {}
         }
 
-        self.func.blocks[self.block].terminator = Some(term);
+        self.func.blocks[self.block].terminator = Some(Terminator {
+            kind: term,
+            addr: self.addr,
+        });
     }
 
     pub fn jump(&mut self, target: JumpTarget) {
-        let terminator = Terminator::Jump(target);
-        self.terminator(terminator);
+        self.terminator(TerminatorKind::Jump(target));
     }
     pub fn brif(&mut self, cond: ValueId, thenb: JumpTarget, elseb: JumpTarget) {
-        let terminator = Terminator::Brif { cond, thenb, elseb };
-        self.terminator(terminator);
+        self.terminator(TerminatorKind::Brif { cond, thenb, elseb });
     }
 
     pub fn ret(&mut self, adjust: u16, args: IoValues) {
-        self.terminator(Terminator::Ret { adjust, args });
+        self.terminator(TerminatorKind::Ret { adjust, args });
     }
 
     pub fn call(&mut self, target: CallTarget, args: IoValues, return_types: &[Io]) -> IoValues {

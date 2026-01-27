@@ -4,12 +4,11 @@ use crate::lir::{
     block::Block,
     flags::FlagsGroup,
     func::SsaFunction,
-    ins::{InsId, InsKind, JumpTarget, Terminator},
+    ins::{InsId, InsKind, JumpTarget, Terminator, TerminatorKind},
     io::IoValues,
     ty::Ty,
     value::{Value, ValueId},
 };
-
 
 pub struct FmtList<'a, T>(pub &'a [T]);
 
@@ -281,11 +280,16 @@ fn fmt_block(
     }
 
     if let Some(term) = &block.terminator {
-        write!(f, "    ")?;
+        match term.addr {
+            Some(addr) if term.addr != last_addr => write!(f, "    {addr}:  ")?,
+            Some(_) => write!(f, "               ")?,
+            None => write!(f, "        ----   ")?,
+        }
+
         fmt_terminator(fmt, term, f)?;
         writeln!(f)?;
     } else {
-        writeln!(f, "    <no terminator>")?;
+        writeln!(f, "               <no terminator>")?;
     }
 
     writeln!(f)?;
@@ -297,20 +301,20 @@ fn fmt_terminator(
     term: &Terminator,
     f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
-    match term {
-        Terminator::Jump(target) => {
+    match &term.kind {
+        TerminatorKind::Jump(target) => {
             write!(f, "jump ")?;
             format_target(fmt, f, target)?;
             Ok(())
         }
-        Terminator::Brif { cond, thenb, elseb } => {
+        TerminatorKind::Brif { cond, thenb, elseb } => {
             write!(f, "brif {} then ", fmt.val(*cond))?;
             format_target(fmt, f, thenb)?;
             write!(f, " else ")?;
             format_target(fmt, f, elseb)?;
             Ok(())
         }
-        Terminator::Ret { adjust, args } => {
+        TerminatorKind::Ret { adjust, args } => {
             if args.len() == 0 {
                 write!(f, "ret stack:{adjust}")
             } else {

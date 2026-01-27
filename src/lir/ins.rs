@@ -422,7 +422,7 @@ impl std::fmt::Display for JumpTarget {
 }
 
 #[derive(Debug, Clone)]
-pub enum Terminator {
+pub enum TerminatorKind {
     Jump(JumpTarget),
     Brif {
         cond: ValueId,
@@ -435,14 +435,20 @@ pub enum Terminator {
     },
 }
 
-impl std::fmt::Display for Terminator {
+#[derive(Debug, Clone)]
+pub struct Terminator {
+    pub kind: TerminatorKind,
+    pub addr: Option<Addr>,
+}
+
+impl std::fmt::Display for TerminatorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Terminator::Jump(t) => write!(f, "jump {t}"),
-            Terminator::Brif { cond, thenb, elseb } => {
+            Self::Jump(t) => write!(f, "jump {t}"),
+            Self::Brif { cond, thenb, elseb } => {
                 write!(f, "brif {cond} then {thenb} else {elseb}",)
             }
-            Terminator::Ret { adjust, args } => {
+            Self::Ret { adjust, args } => {
                 write!(f, "ret stack:{} ({})", adjust, args)
             }
         }
@@ -481,43 +487,43 @@ impl Terminator {
     }
 
     pub fn visit_values(&self, mut callback: impl FnMut(ValueId)) {
-        match self {
-            Terminator::Jump(jp) => {
+        match &self.kind {
+            TerminatorKind::Jump(jp) => {
                 Self::visit_target(jp, callback);
             }
-            Terminator::Brif { cond, thenb, elseb } => {
+            TerminatorKind::Brif { cond, thenb, elseb } => {
                 callback(*cond);
                 Self::visit_target(thenb, &mut callback);
                 Self::visit_target(elseb, &mut callback);
             }
-            Terminator::Ret { adjust: _, args } => {
+            TerminatorKind::Ret { adjust: _, args } => {
                 args.values().for_each(callback);
             }
         }
     }
 
     pub fn visit_values_mut(&mut self, mut callback: impl FnMut(&mut ValueId)) {
-        match self {
-            Terminator::Jump(jp) => {
+        match &mut self.kind {
+            TerminatorKind::Jump(jp) => {
                 Self::visit_target_mut(jp, callback);
             }
-            Terminator::Brif { cond, thenb, elseb } => {
+            TerminatorKind::Brif { cond, thenb, elseb } => {
                 callback(cond);
                 Self::visit_target_mut(thenb, &mut callback);
                 Self::visit_target_mut(elseb, &mut callback);
             }
-            Terminator::Ret { adjust: _, args } => {
+            TerminatorKind::Ret { adjust: _, args } => {
                 args.values_mut().map(callback).count();
             }
         }
     }
 
     pub fn visit_jumps_mut(&mut self, mut callback: impl FnMut(BlockId, &mut Vec<ValueId>)) {
-        match self {
-            Terminator::Jump(JumpTarget::Known { block, args }) => callback(*block, args),
-            Terminator::Jump(JumpTarget::Unknown { .. }) => {}
-            Terminator::Jump(JumpTarget::Tailcall { .. }) => {}
-            Terminator::Brif {
+        match &mut self.kind {
+            TerminatorKind::Jump(JumpTarget::Known { block, args }) => callback(*block, args),
+            TerminatorKind::Jump(JumpTarget::Unknown { .. }) => {}
+            TerminatorKind::Jump(JumpTarget::Tailcall { .. }) => {}
+            TerminatorKind::Brif {
                 cond: _,
                 thenb,
                 elseb,
@@ -530,16 +536,16 @@ impl Terminator {
                     callback(*block, args);
                 }
             }
-            Terminator::Ret { .. } => {}
+            TerminatorKind::Ret { .. } => {}
         }
     }
 
     pub fn visit_jumps(&self, mut callback: impl FnMut(BlockId, &Vec<ValueId>)) {
-        match self {
-            Terminator::Jump(JumpTarget::Known { block, args }) => callback(*block, args),
-            Terminator::Jump(JumpTarget::Unknown { .. }) => {}
-            Terminator::Jump(JumpTarget::Tailcall { .. }) => {}
-            Terminator::Brif {
+        match &self.kind {
+            TerminatorKind::Jump(JumpTarget::Known { block, args }) => callback(*block, args),
+            TerminatorKind::Jump(JumpTarget::Unknown { .. }) => {}
+            TerminatorKind::Jump(JumpTarget::Tailcall { .. }) => {}
+            TerminatorKind::Brif {
                 cond: _,
                 thenb,
                 elseb,
@@ -552,7 +558,7 @@ impl Terminator {
                     callback(*block, args);
                 }
             }
-            Terminator::Ret { .. } => {}
+            TerminatorKind::Ret { .. } => {}
         }
     }
 }

@@ -189,6 +189,7 @@ pub fn func_from_flat(
             }
         }
 
+        block_state.addr = flat_block.terminator().addr();
         block_state.lower_terminator(flat_block.terminator());
     }
 
