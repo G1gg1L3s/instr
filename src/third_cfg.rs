@@ -18,10 +18,11 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
         }
 
         if let Some((&overlapping, block)) = blocks.range(..=addr).next_back()
-            && block.contains(addr) {
-                blocks.remove(&overlapping);
-                to_visit.push(overlapping);
-            }
+            && block.contains(addr)
+        {
+            blocks.remove(&overlapping);
+            to_visit.push(overlapping);
+        }
 
         let code = if let Some(next) = block_starts.range(addr..).nth(1) {
             let size = next.0 - addr.0;
@@ -60,8 +61,9 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
 
         for ins in block.instr() {
             if let flat_ir::Instr::Call {
-                    target: Value::Imm(Imm::U32(addr)),
-                } = &ins.ins {
+                target: Value::Imm(Imm::U32(addr)),
+            } = &ins.ins
+            {
                 to_visit.push(Addr(*addr));
                 block_starts.insert(Addr(*addr));
             }
@@ -76,6 +78,7 @@ pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Bl
 pub struct Function {
     addr: Addr,
     blocks: Vec<Addr>,
+    #[allow(unused)]
     exits: Vec<Addr>,
 }
 

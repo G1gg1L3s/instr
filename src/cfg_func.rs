@@ -74,6 +74,7 @@ enum NodeType {
 #[derive(Debug, Clone, Copy)]
 struct Node {
     index: NodeIndex,
+    #[allow(unused)]
     typ: NodeType,
 }
 

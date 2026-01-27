@@ -7,7 +7,7 @@ use instr::{
     cfg::{Block, BlockType},
     cfg_func::GraphFunctionCollector,
     ins::{Instruction, Op, parse_instruction},
-    instruction_signature, instruction_signature_full, lir, new_cfg,
+    instruction_signature, instruction_signature_full, lir,
     obj::{self, ObjDatabase, Object, ObjectTyp},
     parse_binary, third_cfg,
 };
@@ -173,6 +173,7 @@ fn main() {
     printer.print_skipped(binary.sections.data.end());
 
     return;
+    #[allow(unreachable_code)]
     let mut blocks = instr::cfg::cut_blocks_as_sausage(&binary);
 
     eprintln!(">> Promoting function based on .rdata");
@@ -271,13 +272,6 @@ fn main() {
     }
 }
 
-fn print_jump_table(table: &new_cfg::JumpTable) {
-    for entry in &table.entries {
-        println!("    {} -> {}", entry.addr, entry.target);
-    }
-    println!();
-}
-
 fn print_asm(
     binary: &instr::Binary<'_>,
     db: &ObjDatabase,
@@ -344,13 +338,6 @@ struct PrinterOfSkipped<'a> {
 }
 
 impl<'a> PrinterOfSkipped<'a> {
-    pub fn with_addr(section: SectionData<'a>, start: Addr) -> Self {
-        Self {
-            last_addr: start,
-            section,
-        }
-    }
-
     pub fn new(section: SectionData<'a>) -> Self {
         Self {
             last_addr: section.address,
