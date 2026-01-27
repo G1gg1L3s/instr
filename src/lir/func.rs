@@ -193,8 +193,8 @@ impl SsaFunction {
             self.patch_remove_block_param_and_calls(block_id, phi);
             self.set_alias(phi, trivial);
         }
-        let patched = !to_patch.is_empty();
-        patched
+        
+        !to_patch.is_empty()
     }
 
     fn extract_param_values(

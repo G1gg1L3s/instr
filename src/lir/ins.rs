@@ -11,6 +11,12 @@ pub struct Instrs(Vec<Ins>);
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InsId(u16);
 
+impl Default for Instrs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Instrs {
     pub fn new() -> Self {
         Self(vec![])

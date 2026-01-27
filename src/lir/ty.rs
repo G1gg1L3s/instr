@@ -28,7 +28,7 @@ pub enum Ty {
 impl Ty {
     pub fn imm(self, x: u8) -> Imm {
         match self {
-            Ty::U8 => Imm::U8(x.into()),
+            Ty::U8 => Imm::U8(x),
             Ty::U16 => Imm::U16(x.into()),
             Ty::U32 => Imm::U32(x.into()),
             _ => panic!("cannot convert {self} to immediate"),

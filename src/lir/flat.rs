@@ -167,22 +167,22 @@ pub fn func_from_flat(
         for AnnotatedInstr { addr, ins } in flat_block.instr() {
             block_state.addr = Some(*addr);
 
-            match ins {
-                &flat_ir::Instr::BinOp {
+            match *ins {
+                flat_ir::Instr::BinOp {
                     op,
                     dst,
                     lhs,
                     rhs,
                     flags,
                 } => block_state.lower_bin(op, dst, lhs, rhs, flags),
-                &flat_ir::Instr::Assign { dst, src } => block_state.lower_assign(dst, src),
-                &flat_ir::Instr::Load { dst, addr, space } => {
+                flat_ir::Instr::Assign { dst, src } => block_state.lower_assign(dst, src),
+                flat_ir::Instr::Load { dst, addr, space } => {
                     block_state.lower_load(dst, addr, space)
                 }
-                &flat_ir::Instr::Store { addr, src, space } => {
+                flat_ir::Instr::Store { addr, src, space } => {
                     block_state.lower_store(addr, src, space)
                 }
-                &flat_ir::Instr::Call { target } => block_state.lower_call(target),
+                flat_ir::Instr::Call { target } => block_state.lower_call(target),
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -361,7 +361,7 @@ impl<'a> BlockState<'a> {
                 self.lower_ret(*stack_adjust);
             }
             flat_ir::Terminator::Fallthrough { next } => {
-                let block = self.state.blocks[&next];
+                let block = self.state.blocks[next];
 
                 self.ins().jump(JumpTarget::Known {
                     block,

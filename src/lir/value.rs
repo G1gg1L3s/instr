@@ -24,6 +24,12 @@ pub enum Value {
     Imm(Imm),
 }
 
+impl Default for Values {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Values {
     pub fn new() -> Self {
         Self(vec![])

@@ -144,7 +144,7 @@ impl SsaBuilder {
             return v;
         }
 
-        let sealed = self.blocks.get(&block).map_or(false, |b| b.sealed);
+        let sealed = self.blocks.get(&block).is_some_and(|b| b.sealed);
 
         if !sealed {
             let phi = self.new_param(self.vars[var].ty);
@@ -238,7 +238,7 @@ impl SsaBuilder {
                 values.push(val);
             }
 
-            if values.len() == 0 {
+            if values.is_empty() {
                 log::trace!(
                     "        >> Predecessors are empty, creating uninit read {var} -> {phi}"
                 );

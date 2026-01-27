@@ -34,6 +34,12 @@ impl Block {
     }
 }
 
+impl Default for Blocks {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Blocks {
     pub fn new() -> Self {
         Self(vec![])

@@ -41,14 +41,13 @@ fn fold_ins(ins: &mut Ins, values: &mut Values) -> bool {
     let lhs_val = &values[*lhs];
     let rhs_val = &values[*rhs];
 
-    if let (Value::Imm(lhs_imm), Value::Imm(rhs_imm)) = (lhs_val, rhs_val) {
-        if let Some(res) = compute_const(*op, *lhs_imm, *rhs_imm) {
+    if let (Value::Imm(lhs_imm), Value::Imm(rhs_imm)) = (lhs_val, rhs_val)
+        && let Some(res) = compute_const(*op, *lhs_imm, *rhs_imm) {
             log::trace!(">> Folding {dst} = {lhs} {op} {rhs} into {dst} = {res}");
             values[*dst] = Value::Imm(res);
             ins.kind = InsKind::Hole;
             return true;
-        }
-    };
+        };
 
     if let (BinOp::BitOr, Some(res)) = (*op, to_0xff_imm(lhs_val).or(to_0xff_imm(rhs_val))) {
         log::info!(">> Folding {dst} = {lhs} {op} {rhs} into {dst} = {res}");

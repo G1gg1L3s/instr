@@ -1,7 +1,7 @@
 use crate::lir::{
     analysis::def_use::{self, ValueSource},
     func::SsaFunction,
-    ins::{BinOp, Condition, Ins, InsKind},
+    ins::{BinOp, Condition, InsKind},
     value::{Value, ValueId},
 };
 
@@ -16,7 +16,7 @@ pub fn exec(func: &mut SsaFunction) {
     }
 
     for (_, block) in func.blocks.iter_mut() {
-        for (_, &ins_id) in block.ins.iter().enumerate() {
+        for &ins_id in block.ins.iter() {
             let ins = &func.ins[ins_id];
             let &InsKind::Cond { dst, flags, cond } = &ins.kind else {
                 continue;

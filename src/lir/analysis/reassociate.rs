@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::lir::{
     analysis::def_use,
     func::SsaFunction,
-    ins::{BinOp, Ins, InsId, InsKind, Instrs},
+    ins::{BinOp, InsId, InsKind, Instrs},
     value::{Imm, Value, ValueId, Values},
 };
 

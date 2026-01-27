@@ -10,13 +10,12 @@ use crate::lir::{
     value::{Value, ValueId},
 };
 
-use super::ins::Ins;
 
 pub struct FmtList<'a, T>(pub &'a [T]);
 
 impl<'a, T: std::fmt::Display> std::fmt::Display for FmtList<'a, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0.len() > 0 {
+        if !self.0.is_empty() {
             write!(f, "(")?;
             for (i, arg) in self.0.iter().enumerate() {
                 if i != 0 {
@@ -162,7 +161,7 @@ impl<'a> Display for ValueFmt<'a> {
 
 impl<'a> Display for ValuesFmt<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.vals.len() > 0 {
+        if !self.vals.is_empty() {
             write!(f, "(")?;
             for (i, arg) in self.vals.iter().enumerate() {
                 if i != 0 {
@@ -326,7 +325,7 @@ fn format_target(
     f: &mut std::fmt::Formatter<'_>,
     target: &JumpTarget,
 ) -> Result<(), std::fmt::Error> {
-    Ok(match target {
+    let _: () = match target {
         JumpTarget::Known { block, args } => {
             write!(f, "{}{}", block, fmt.vals(args))?;
         }
@@ -336,7 +335,8 @@ fn format_target(
         JumpTarget::Tailcall { addr, args } => {
             write!(f, "tailcall {}({})", addr, fmt.io_vals(args))?;
         }
-    })
+    };
+    Ok(())
 }
 
 fn maybe_fmt_alias(
@@ -345,9 +345,10 @@ fn maybe_fmt_alias(
     f: &mut std::fmt::Formatter<'_>,
     result: ValueId,
 ) -> Result<(), std::fmt::Error> {
-    Ok(if let Some(aliases) = aliases.get(&result) {
+    let _: () = if let Some(aliases) = aliases.get(&result) {
         for alias in aliases {
             writeln!(f, "    {} -> {}", fmt.val(*alias), fmt.val(result))?;
         }
-    })
+    };
+    Ok(())
 }

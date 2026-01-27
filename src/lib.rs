@@ -406,7 +406,7 @@ pub fn instruction_signature_full(instr: &iced_x86::Instruction) -> String {
     prefixes.extend(instr.has_xrelease_prefix().then_some("xrelease"));
     prefixes.extend(instr.has_lock_prefix().then_some("lock"));
 
-    let prefixes = if prefixes.len() > 0 {
+    let prefixes = if !prefixes.is_empty() {
         format!(" prefix={}", prefixes.join(":"))
     } else {
         String::new()

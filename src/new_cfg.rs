@@ -427,22 +427,20 @@ fn next_addrs(db: &ObjDatabase, blocks: &BTreeMap<Addr, &Block>, block: &CodeBlo
             successors.push(addr);
         }
         Instruction::Jump(Op::Mem(mem)) => {
-            if looks_like_jump_table(&mem) {
-                if let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp)) {
+            if looks_like_jump_table(&mem)
+                && let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp)) {
                     successors.extend(jt.entries.iter().map(|entry| entry.target));
                 }
-            }
         }
         Instruction::JumpConditional(Op::Addr(addr), _) => {
             successors.push(addr);
             successors.push(block.end());
         }
         Instruction::JumpConditional(Op::Mem(mem), _) => {
-            if looks_like_jump_table(&mem) {
-                if let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp)) {
+            if looks_like_jump_table(&mem)
+                && let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp)) {
                     successors.extend(jt.entries.iter().map(|entry| entry.target));
                 }
-            }
             successors.push(block.end());
         }
         Instruction::Loop(addr) => {
@@ -467,7 +465,7 @@ pub fn derive_functions(db: &ObjDatabase, blocks: &[Block]) {
 
     let (block_to_func, tail_call_funcs) = assign_block_to_func(&jump_graph, &blocks);
 
-    let block_to_func = if tail_call_funcs.len() > 0 {
+    let block_to_func = if !tail_call_funcs.is_empty() {
         for FuncAddr(addr) in tail_call_funcs {
             let Some(Block::Code(code)) = blocks.get_mut(&addr) else {
                 continue;
@@ -483,7 +481,7 @@ pub fn derive_functions(db: &ObjDatabase, blocks: &[Block]) {
 
         let (block_to_func, tail_call_funcs) = assign_block_to_func(&jump_graph, &blocks);
 
-        if tail_call_funcs.len() > 0 {
+        if !tail_call_funcs.is_empty() {
             panic!(">> tail calls again: {:?}", tail_call_funcs);
         }
         block_to_func
@@ -510,11 +508,10 @@ fn assign_block_to_func(
             eprintln!(">> Processing 0x6baff0");
         }
 
-        if let Some(Block::Code(code)) = blocks.get(&func_addr) {
-            if code.typ != CodeBlockTyp::Entry {
+        if let Some(Block::Code(code)) = blocks.get(&func_addr)
+            && code.typ != CodeBlockTyp::Entry {
                 identified_funcs.insert(FuncAddr(func_addr));
             }
-        }
 
         to_visit.clear();
         to_visit.push(func_addr);
