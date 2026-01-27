@@ -16,6 +16,8 @@ use crate::{
     third_cfg,
 };
 
+use super::ins_builder::InsBuilder;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum FlatVar {
     Reg(flat_ir::Reg),
@@ -85,6 +87,7 @@ struct State {
 struct BlockState<'a> {
     flat_block: &'a flat_ir::Block,
     state: &'a mut State,
+    addr: Option<Addr>,
 }
 
 const REGS: [flat_ir::Reg; 8] = [
@@ -126,6 +129,7 @@ pub fn func_from_flat(
         let mut block_state = BlockState {
             flat_block: &blocks[&flat_entry],
             state: &mut state,
+            addr: None,
         };
 
         {
@@ -157,9 +161,12 @@ pub fn func_from_flat(
         let mut block_state = BlockState {
             flat_block,
             state: &mut state,
+            addr: None,
         };
 
-        for AnnotatedInstr { addr: _, ins } in flat_block.instr() {
+        for AnnotatedInstr { addr, ins } in flat_block.instr() {
+            block_state.addr = Some(*addr);
+
             match ins {
                 &flat_ir::Instr::BinOp {
                     op,
@@ -230,7 +237,7 @@ impl<'a> BlockState<'a> {
 
             flat_ir::Value::Imm(imm) => {
                 let imm = imm_to_ssa(imm);
-                self.state.builder.ins().iconst(imm)
+                self.ins().iconst(imm)
             }
             flat_ir::Value::Temp(temp_id) => {
                 let var = self.get_var(FlatVar::Temp(temp_id));
@@ -238,6 +245,14 @@ impl<'a> BlockState<'a> {
             }
             flat_ir::Value::Flag(_flag) => todo!(),
             flat_ir::Value::X87StatusWord => todo!(),
+        }
+    }
+
+    fn ins(&mut self) -> InsBuilder<'_> {
+        if let Some(addr) = self.addr {
+            self.state.builder.ins_addr(addr)
+        } else {
+            self.state.builder.ins()
         }
     }
 
@@ -272,7 +287,7 @@ impl<'a> BlockState<'a> {
             Some(FlagsGroup::new(flags_to_ssa(group.flags())))
         };
 
-        let (res, flags) = self.state.builder.ins().bin(op, lhs, rhs, flags);
+        let (res, flags) = self.ins().bin(op, lhs, rhs, flags);
 
         if let Some(dst) = dst {
             self.lower_write_val(dst, res)
@@ -294,7 +309,7 @@ impl<'a> BlockState<'a> {
             })
             .collect();
 
-        self.state.builder.ins().ret(stack_adjust, args);
+        self.ins().ret(stack_adjust, args);
     }
 
     fn lower_condition(&mut self, cond: flat_ir::Condition) -> ValueId {
@@ -305,7 +320,7 @@ impl<'a> BlockState<'a> {
         let ty = self.state.builder.func.val_ty(flags_val);
         let Some(Ty::Flags(flags)) = ty else {
             log::warn!("invalid value {flags_val}: expected flags, found: {ty:?}");
-            return self.state.builder.ins().unimplemented();
+            return self.ins().unimplemented();
         };
 
         if !flags.contains(required) {
@@ -317,7 +332,7 @@ impl<'a> BlockState<'a> {
         }
 
         let cond = cond_to_ssa(cond);
-        self.state.builder.ins().cond(cond, flags_val)
+        self.ins().cond(cond, flags_val)
     }
 
     fn lower_terminator(&mut self, terminator: &flat_ir::Terminator) {
@@ -333,11 +348,11 @@ impl<'a> BlockState<'a> {
                 let thenb = self.lower_branch_target(then_bb);
                 let elseb = self.lower_branch_target(else_bb);
 
-                self.state.builder.ins().brif(cond, thenb, elseb);
+                self.ins().brif(cond, thenb, elseb);
             }
             flat_ir::Terminator::Jump { addr: _, target } => {
                 let target = self.lower_branch_target(target);
-                self.state.builder.ins().jump(target);
+                self.ins().jump(target);
             }
             flat_ir::Terminator::Ret {
                 addr: _,
@@ -348,7 +363,7 @@ impl<'a> BlockState<'a> {
             flat_ir::Terminator::Fallthrough { next } => {
                 let block = self.state.blocks[&next];
 
-                self.state.builder.ins().jump(JumpTarget::Known {
+                self.ins().jump(JumpTarget::Known {
                     block,
                     args: vec![],
                 });
@@ -392,7 +407,7 @@ impl<'a> BlockState<'a> {
         let mem = self.get_var(FlatVar::Mem);
         let mem = self.state.builder.read_var(mem);
 
-        let val = self.state.builder.ins().load(ty, addr, mem, space);
+        let val = self.ins().load(ty, addr, mem, space);
         self.lower_write_val(dst, val);
     }
 
@@ -404,7 +419,7 @@ impl<'a> BlockState<'a> {
         let mem_var = self.get_var(FlatVar::Mem);
         let mem = self.state.builder.read_var(mem_var);
 
-        let mem = self.state.builder.ins().store(addr, src, mem, space);
+        let mem = self.ins().store(addr, src, mem, space);
         self.state.builder.write_var(mem_var, mem);
     }
 
@@ -436,7 +451,7 @@ impl<'a> BlockState<'a> {
 
         let args = self.read_io_values(&FUNC_ARGS);
 
-        let res = self.state.builder.ins().call(target, args, &return_types);
+        let res = self.ins().call(target, args, &return_types);
 
         for (io, res) in res.iter() {
             let flatvar = io_to_flatvar(*io);

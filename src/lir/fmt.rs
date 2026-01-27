@@ -262,8 +262,20 @@ fn fmt_block(
         maybe_fmt_alias(fmt, aliases, f, *param)?;
     }
 
+    let mut last_addr = None;
     for ins in &block.ins {
-        writeln!(f, "    {}", fmt.ins(*ins))?;
+        let ins_addr = fmt.func.ins[*ins].addr;
+
+        if let Some(addr) = ins_addr
+            && last_addr != ins_addr
+        {
+            write!(f, "    {addr}:  ")?
+        } else {
+            write!(f, "               ")?
+        }
+        last_addr = ins_addr;
+
+        writeln!(f, "{}", fmt.ins(*ins))?;
         for result in fmt.func.instr_result(*ins) {
             maybe_fmt_alias(fmt, aliases, f, result)?;
         }
