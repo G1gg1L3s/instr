@@ -4,7 +4,7 @@ use crate::lir::{
     block::Block,
     flags::FlagsGroup,
     func::SsaFunction,
-    ins::{InsId, InsKind, JumpTarget, Terminator, TerminatorKind},
+    ins::{CallTarget, InsId, InsKind, JumpTarget, Terminator, TerminatorKind},
     io::IoValues,
     ty::Ty,
     value::{Value, ValueId},
@@ -135,7 +135,7 @@ impl<'a> Display for InsFmt<'a> {
                 f,
                 "({}) = call {}({})",
                 self.fmt.io_vals(result),
-                target,
+                FormatCallTarget(self.fmt, target),
                 self.fmt.io_vals(args)
             ),
         }
@@ -341,6 +341,18 @@ fn format_target(
         }
     };
     Ok(())
+}
+
+struct FormatCallTarget<'a>(FuncFmt<'a>, &'a CallTarget);
+
+impl<'a> std::fmt::Display for FormatCallTarget<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(fmt, target) = self;
+        match target {
+            CallTarget::Known { addr } => write!(f, "func_{addr}"),
+            CallTarget::Unknown { addr } => write!(f, "?{}", fmt.val(*addr)),
+        }
+    }
 }
 
 fn maybe_fmt_alias(

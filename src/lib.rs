@@ -74,6 +74,14 @@ impl<'a> SectionData<'a> {
         u32::from_le_bytes(self.slice(addr, 4).try_into().unwrap())
     }
 
+    pub fn read_u8(&self, addr: Addr) -> u8 {
+        self.slice_to_end(addr)[0]
+    }
+
+    pub fn read_array<const N: usize>(&self, addr: Addr) -> [u8; N] {
+        self.slice(addr, N).try_into().unwrap()
+    }
+
     pub fn to_range(&self) -> std::ops::Range<Addr> {
         self.address..self.end()
     }

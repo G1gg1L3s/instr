@@ -120,6 +120,9 @@ fn main() {
                 break;
             }
         }
+
+        lir::analysis::fill_static_reads::exec(&mut ssa_func, binary.sections.rdata);
+
         println!("{}", ssa_func.fmt());
         ssa_functions.push(ssa_func);
     }
