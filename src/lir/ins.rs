@@ -163,6 +163,12 @@ pub enum InsKind {
         target: CallTarget,
         args: IoValues,
     },
+
+    Extract {
+        dst: ValueId,
+        src: ValueId,
+        offset: u8,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -252,6 +258,14 @@ impl Ins {
                     CallTarget::Unknown { addr } => callback(addr),
                 }
             }
+            InsKind::Extract {
+                dst,
+                src,
+                offset: _,
+            } => {
+                callback(dst);
+                callback(src);
+            }
         }
     }
 
@@ -311,6 +325,13 @@ impl Ins {
                     CallTarget::Unknown { addr } => callback(*addr),
                 }
             }
+            InsKind::Extract {
+                dst: _,
+                src,
+                offset: _,
+            } => {
+                callback(*src);
+            }
         }
     }
 
@@ -324,6 +345,7 @@ impl Ins {
             InsKind::Store { .. } => true,
             InsKind::Cond { .. } => false,
             InsKind::Call { .. } => true,
+            InsKind::Extract { .. } => false,
         }
     }
 
@@ -343,6 +365,7 @@ impl Ins {
             InsKind::Cond { dst, .. } => res.push(*dst).unwrap(),
             InsKind::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
             InsKind::Call { result, .. } => res.extend(result.values()),
+            InsKind::Extract { dst, .. } => res.push(*dst).unwrap(),
         }
 
         res
@@ -392,6 +415,9 @@ impl std::fmt::Display for Ins {
                 args,
             } => {
                 write!(f, "({}) = call {target}({})", result, args)
+            }
+            InsKind::Extract { dst, src, offset } => {
+                write!(f, "{dst} = extract {src}[{offset}..]")
             }
         }
     }

@@ -165,4 +165,10 @@ impl<'a> InsBuilder<'a> {
         self.emit(InsKind::Cond { dst, flags, cond });
         dst
     }
+
+    pub fn extract(&mut self, src: ValueId, offset: u8, ty: Ty) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty });
+        self.emit(InsKind::Extract { dst, src, offset });
+        dst
+    }
 }

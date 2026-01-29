@@ -183,6 +183,9 @@ pub fn func_from_flat(
                     block_state.lower_store(addr, src, space)
                 }
                 flat_ir::Instr::Call { target } => block_state.lower_call(target),
+                flat_ir::Instr::SliceBytes { dst, src, start } => {
+                    block_state.lower_slice_bytes(dst, src, start)
+                }
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -470,6 +473,14 @@ impl<'a> BlockState<'a> {
                 (flatvar.to_io().unwrap(), val)
             })
             .collect::<_>()
+    }
+
+    fn lower_slice_bytes(&mut self, dst: flat_ir::Value, src: flat_ir::Value, start: u8) {
+        let src = self.lower_val(src);
+        let ty = self.value_ty(dst);
+
+        let val = self.ins().extract(src, start, ty);
+        self.lower_write_val(dst, val);
     }
 }
 

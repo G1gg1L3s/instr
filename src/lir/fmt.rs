@@ -138,6 +138,15 @@ impl<'a> Display for InsFmt<'a> {
                 FormatCallTarget(self.fmt, target),
                 self.fmt.io_vals(args)
             ),
+            InsKind::Extract { dst, src, offset } => match self.fmt.func.val_ty(*dst) {
+                Some(ty) => write!(
+                    f,
+                    "{} = extract.{ty} {}[{offset}..]",
+                    self.fmt.val(*dst),
+                    self.fmt.val(*src)
+                ),
+                None => todo!(),
+            },
         }
     }
 }
