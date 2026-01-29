@@ -37,6 +37,10 @@ impl Instrs {
         self.0.iter()
     }
 
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Ins> {
+        self.0.iter_mut()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (InsId, &Ins)> {
         self.keys().zip(self.0.iter())
     }

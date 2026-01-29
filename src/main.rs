@@ -122,6 +122,7 @@ fn main() {
         }
 
         lir::analysis::fill_static_reads::exec(&mut ssa_func, binary.sections.rdata);
+        lir::analysis::promote_known_targets::run(&mut ssa_func);
 
         println!("{}", ssa_func.fmt());
         ssa_functions.push(ssa_func);

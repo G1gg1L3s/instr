@@ -25,6 +25,18 @@ impl std::fmt::Display for Addr {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct MaybeUnknownAddr(pub Option<Addr>);
+
+impl std::fmt::Display for MaybeUnknownAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(x) => x.fmt(f),
+            None => write!(f, "<unknown>"),
+        }
+    }
+}
+
 impl std::ops::Add<Addr> for Addr {
     type Output = Addr;
 
