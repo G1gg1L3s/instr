@@ -708,6 +708,16 @@ fn map_reg_unwrap(reg: iced_x86::Register, addr: Addr) -> Reg {
     }
 }
 
+fn split_i32(u: u32) -> (bool, u32) {
+    let i = u as i32;
+
+    if i >= 0 {
+        (true, i as u32)
+    } else {
+        (false, i.wrapping_abs() as u32)
+    }
+}
+
 fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpace, Value) {
     let scaled: Option<Value> = if ins.memory_index() == iced_x86::Register::None {
         None
@@ -751,20 +761,25 @@ fn lower_mem_operand(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> (MemSpa
 
     let disp = ins.memory_displacement32();
     let result = if disp != 0 {
-        let disp = Value::Imm(Imm::U32(disp));
-
         Some(if let Some(scaled_and_base) = scaled_and_base {
-            let res = ctx.new_temp(Size::U32);
-            ctx.emit(Instr::BinOp {
-                op: BinOp::Add,
-                dst: Some(res),
-                lhs: scaled_and_base,
-                rhs: disp,
-                flags: FlagxGroup::NONE,
-            });
-            res
+            let (positive, magnitude) = split_i32(disp);
+            if positive {
+                emit_bin(
+                    ctx,
+                    BinOp::Add,
+                    scaled_and_base,
+                    Value::Imm(Imm::U32(magnitude)),
+                )
+            } else {
+                emit_bin(
+                    ctx,
+                    BinOp::Sub,
+                    scaled_and_base,
+                    Value::Imm(Imm::U32(magnitude)),
+                )
+            }
         } else {
-            disp
+            Value::Imm(Imm::U32(disp))
         })
     } else {
         scaled_and_base
@@ -1419,10 +1434,7 @@ fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: 
     };
 
     let result = emit_bin_with_flags(ctx, op, lhs, rhs, FlagxGroup::X87_C1);
-    ctx.emit(Instr::Assign {
-        dst,
-        src: result,
-    });
+    ctx.emit(Instr::Assign { dst, src: result });
 
     if let Fpop::Yes = fpop {
         ctx.emit(Instr::X87Pop {
@@ -1672,10 +1684,7 @@ fn _lower_enter(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 
     // mov ebp, esp
-    ctx.emit(Instr::Assign {
-        dst: ebp,
-        src: esp,
-    });
+    ctx.emit(Instr::Assign { dst: ebp, src: esp });
 
     // sub esp, imm16
     if frame_size != 0 {
@@ -1700,10 +1709,7 @@ fn lower_leave(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction) {
     let ebp = Value::Reg(Reg::Ebp);
 
     // mov esp, ebp
-    ctx.emit(Instr::Assign {
-        dst: esp,
-        src: ebp,
-    });
+    ctx.emit(Instr::Assign { dst: esp, src: ebp });
 
     // pop ebp
     let old_esp = ctx.new_temp(Size::U32);
