@@ -19,6 +19,12 @@ use crate::{
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VarId(u16);
 
+impl VarId {
+    fn to_idx(self) -> u16 {
+        self.0
+    }
+}
+
 impl std::fmt::Debug for VarId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "var{}", self.0)
@@ -223,8 +229,10 @@ impl SsaBuilder {
         log::trace!(">> Sealing {}", block);
         self.blocks.entry(block).or_default().sealed = true;
 
-        let entries: Vec<(VarId, ValueId)> =
+        let mut entries: Vec<(VarId, ValueId)> =
             self.incomplete_phis.remove(&block).unwrap_or_default();
+
+        entries.sort_by_key(|(var, _)| var.to_idx());
 
         let preds = self.func.blocks[block].predecessors.clone();
         for (var, phi) in entries {
@@ -311,11 +319,13 @@ fn topo_sort_blocks(blocks: &super::block::Blocks) -> Vec<BlockId> {
     }
 
     if result.len() < indegree.len() {
-        let remaining: Vec<_> = indegree
+        let mut remaining: Vec<_> = indegree
             .keys()
             .filter(|b| !result.contains(b))
             .copied()
             .collect();
+
+        remaining.sort_by_key(|b| b.to_idx());
 
         result.extend(remaining);
     }

@@ -14,6 +14,12 @@ pub struct Blocks(Vec<Block>);
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockId(u16);
 
+impl BlockId {
+    pub fn to_idx(self) -> u16 {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Block {
     pub id: BlockId,
