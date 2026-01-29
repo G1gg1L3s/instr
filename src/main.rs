@@ -121,6 +121,17 @@ fn main() {
             }
         }
 
+        loop {
+            let changed = lir::analysis::cse::run(&mut ssa_func);
+            if !changed {
+                break;
+            }
+        }
+
+        ssa_func.resolve();
+        lir::analysis::reconstruct_comp::exec(&mut ssa_func);
+        lir::analysis::dce::exec(&mut ssa_func);
+
         lir::analysis::fill_static_reads::exec(&mut ssa_func, binary.sections.rdata);
         lir::analysis::promote_known_targets::run(&mut ssa_func);
 

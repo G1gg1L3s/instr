@@ -372,7 +372,12 @@ fn maybe_fmt_alias(
 ) -> Result<(), std::fmt::Error> {
     let _: () = if let Some(aliases) = aliases.get(&result) {
         for alias in aliases {
-            writeln!(f, "    {} -> {}", fmt.val(*alias), fmt.val(result))?;
+            writeln!(
+                f,
+                "               {} -> {}",
+                fmt.val(*alias),
+                fmt.val(result)
+            )?;
         }
     };
     Ok(())
