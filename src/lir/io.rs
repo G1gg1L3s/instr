@@ -45,6 +45,14 @@ pub struct IoValues {
 }
 
 impl IoValues {
+    pub fn get(&self, io: Io) -> Option<ValueId> {
+        self.vals.get(&io).copied()
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = Io> {
+        self.vals.keys().copied()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&Io, &ValueId)> {
         self.vals.iter()
     }
@@ -63,6 +71,10 @@ impl IoValues {
 
     pub fn len(&self) -> usize {
         self.vals.len()
+    }
+
+    pub fn retain(&mut self, f: impl FnMut(&Io, &mut ValueId) -> bool) {
+        self.vals.retain(f);
     }
 }
 

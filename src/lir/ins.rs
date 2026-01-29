@@ -33,6 +33,10 @@ impl Instrs {
         InsKeys(0..max)
     }
 
+    pub fn values(&self) -> impl Iterator<Item = &Ins> {
+        self.0.iter()
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (InsId, &Ins)> {
         self.keys().zip(self.0.iter())
     }

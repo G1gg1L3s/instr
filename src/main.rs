@@ -96,6 +96,7 @@ fn main() {
     let blocks = third_cfg::walk_code_blocks(binary.sections.text, binary.entry_point);
 
     let functions = third_cfg::derive_functions(&blocks, binary.entry_point);
+    let mut ssa_functions = Vec::with_capacity(functions.len());
 
     for func in functions.iter() {
         println!(
@@ -120,7 +121,10 @@ fn main() {
             }
         }
         println!("{}", ssa_func.fmt());
+        ssa_functions.push(ssa_func);
     }
+
+    lir::analysis::collect_allocations::run(&ssa_functions);
 
     println!(".funcs: # Detected {} functions", functions.len());
     for func in functions {

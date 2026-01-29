@@ -79,6 +79,14 @@ impl Blocks {
         let keys = self.keys();
         keys.zip(self.0.iter_mut())
     }
+
+    pub fn first(&self) -> &Block {
+        self.0.first().expect("at least one block exists")
+    }
+
+    pub fn first_mut(&mut self) -> &mut Block {
+        self.0.first_mut().expect("at least one block exists")
+    }
 }
 
 #[derive(Debug, Clone)]

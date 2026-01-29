@@ -1,11 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::lir::{
-    analysis::def_use,
-    func::SsaFunction,
-    ins::InsKind,
-    value::ValueId,
-};
+use crate::lir::{analysis::def_use, func::SsaFunction, ins::InsKind, value::ValueId};
 
 fn compute_uses(func: &SsaFunction) -> HashMap<ValueId, usize> {
     let mut uses = HashMap::with_capacity(func.values.len());
@@ -32,9 +27,10 @@ pub fn exec(func: &mut SsaFunction) {
     for (_, ins) in func.ins.iter_mut() {
         if let InsKind::BinOp { flags, .. } = &mut ins.kind
             && let Some(f) = flags
-                && uses.get(f).copied().unwrap_or(0) == 0 {
-                    *flags = None;
-                }
+            && uses.get(f).copied().unwrap_or(0) == 0
+        {
+            *flags = None;
+        }
     }
 
     let mut worklist = VecDeque::new();
@@ -95,4 +91,25 @@ pub fn exec(func: &mut SsaFunction) {
             .ins
             .retain(|&ins_id| !matches!(func.ins[ins_id].kind, InsKind::Hole));
     }
+
+    // TODO: need to consider terminators
+    // let mut inputs_to_remove = vec![];
+    // func.blocks.first_mut().params.retain(|val| {
+    //     let uses = uses.get(&val).copied().unwrap_or(0);
+    //     if uses == 0 {
+    //         inputs_to_remove.push(*val);
+    //         false
+    //     } else {
+    //         true
+    //     }
+    // });
+
+    // func.inputs.retain(|io, v| {
+    //     if inputs_to_remove.contains(v) {
+    //         log::trace!(">> Removing input {io}:{v} from {}", func.addr);
+    //         false
+    //     } else {
+    //         true
+    //     }
+    // });
 }
