@@ -186,6 +186,12 @@ pub fn func_from_flat(
                 flat_ir::Instr::SliceBytes { dst, src, start } => {
                     block_state.lower_slice_bytes(dst, src, start)
                 }
+                flat_ir::Instr::SetBytes {
+                    dst,
+                    base,
+                    value,
+                    start,
+                } => block_state.lower_set_bytes(dst, base, value, start),
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -248,7 +254,7 @@ impl<'a> BlockState<'a> {
                 self.state.builder.read_var(var)
             }
             flat_ir::Value::Flag(_flag) => todo!(),
-            flat_ir::Value::X87StatusWord => todo!(),
+            flat_ir::Value::X87StatusWord => self.ins().unimplemented(),
         }
     }
 
@@ -480,6 +486,20 @@ impl<'a> BlockState<'a> {
         let ty = self.value_ty(dst);
 
         let val = self.ins().extract(src, start, ty);
+        self.lower_write_val(dst, val);
+    }
+
+    fn lower_set_bytes(
+        &mut self,
+        dst: flat_ir::Value,
+        base: flat_ir::Value,
+        value: flat_ir::Value,
+        start: u8,
+    ) {
+        let base = self.lower_val(base);
+        let value = self.lower_val(value);
+
+        let val = self.ins().insert(base, value, start);
         self.lower_write_val(dst, val);
     }
 }

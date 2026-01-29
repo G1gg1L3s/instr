@@ -169,6 +169,13 @@ pub enum InsKind {
         src: ValueId,
         offset: u8,
     },
+
+    Insert {
+        dst: ValueId,
+        base: ValueId,
+        value: ValueId,
+        offset: u8,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -266,6 +273,16 @@ impl Ins {
                 callback(dst);
                 callback(src);
             }
+            InsKind::Insert {
+                dst,
+                base,
+                value,
+                offset: _,
+            } => {
+                callback(dst);
+                callback(base);
+                callback(value);
+            }
         }
     }
 
@@ -332,6 +349,15 @@ impl Ins {
             } => {
                 callback(*src);
             }
+            InsKind::Insert {
+                dst: _,
+                base,
+                value,
+                offset: _,
+            } => {
+                callback(*base);
+                callback(*value);
+            }
         }
     }
 
@@ -346,6 +372,7 @@ impl Ins {
             InsKind::Cond { .. } => false,
             InsKind::Call { .. } => true,
             InsKind::Extract { .. } => false,
+            InsKind::Insert { .. } => false,
         }
     }
 
@@ -366,6 +393,7 @@ impl Ins {
             InsKind::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
             InsKind::Call { result, .. } => res.extend(result.values()),
             InsKind::Extract { dst, .. } => res.push(*dst).unwrap(),
+            InsKind::Insert { dst, .. } => res.push(*dst).unwrap(),
         }
 
         res
@@ -418,6 +446,14 @@ impl std::fmt::Display for Ins {
             }
             InsKind::Extract { dst, src, offset } => {
                 write!(f, "{dst} = extract {src}[{offset}..]")
+            }
+            InsKind::Insert {
+                dst,
+                base,
+                value,
+                offset,
+            } => {
+                write!(f, "{dst} = insert {base}[{offset}..] <- {value}")
             }
         }
     }

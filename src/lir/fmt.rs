@@ -145,7 +145,33 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*dst),
                     self.fmt.val(*src)
                 ),
-                None => todo!(),
+                None => write!(
+                    f,
+                    "{} = extract.??? {}[{offset}..]",
+                    self.fmt.val(*dst),
+                    self.fmt.val(*src)
+                ),
+            },
+            InsKind::Insert {
+                dst,
+                base,
+                value,
+                offset,
+            } => match self.fmt.func.val_ty(*value) {
+                Some(ty) => write!(
+                    f,
+                    "{} = insert.{ty} {}[{offset}..] <- {}",
+                    self.fmt.val(*dst),
+                    self.fmt.val(*base),
+                    self.fmt.val(*value)
+                ),
+                None => write!(
+                    f,
+                    "{} = insert.??? {}[{offset}..] <- {}",
+                    self.fmt.val(*dst),
+                    self.fmt.val(*base),
+                    self.fmt.val(*value)
+                ),
             },
         }
     }

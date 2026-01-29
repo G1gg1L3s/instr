@@ -49,11 +49,7 @@ impl<'a> InsBuilder<'a> {
         rhs: ValueId,
         flags: Option<FlagsGroup>,
     ) -> (ValueId, Option<ValueId>) {
-        let dst = if let Some(ty) = self.func.val_ty(lhs) {
-            self.func.values.add(Value::Temp { ty })
-        } else {
-            self.func.values.add(Value::Invalid)
-        };
+        let dst = self.with_ty(lhs);
 
         let flags = flags.map(|f| {
             self.func.values.add(Value::Temp {
@@ -70,6 +66,14 @@ impl<'a> InsBuilder<'a> {
         });
 
         (dst, flags)
+    }
+
+    fn with_ty(&mut self, lhs: ValueId) -> ValueId {
+        if let Some(ty) = self.func.val_ty(lhs) {
+            self.func.values.add(Value::Temp { ty })
+        } else {
+            self.func.values.add(Value::Invalid)
+        }
     }
 
     pub fn unimplemented(&mut self) -> ValueId {
@@ -169,6 +173,17 @@ impl<'a> InsBuilder<'a> {
     pub fn extract(&mut self, src: ValueId, offset: u8, ty: Ty) -> ValueId {
         let dst = self.func.values.add(Value::Temp { ty });
         self.emit(InsKind::Extract { dst, src, offset });
+        dst
+    }
+
+    pub fn insert(&mut self, base: ValueId, value: ValueId, offset: u8) -> ValueId {
+        let dst = self.with_ty(base);
+        self.emit(InsKind::Insert {
+            dst,
+            base,
+            value,
+            offset,
+        });
         dst
     }
 }
