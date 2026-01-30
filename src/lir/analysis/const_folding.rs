@@ -1,6 +1,7 @@
 use crate::lir::{
     func::SsaFunction,
     ins::{BinOp, Ins, InsKind},
+    ty::Ty,
     value::{Imm, Value, Values},
 };
 
@@ -9,13 +10,14 @@ pub fn run(func: &mut SsaFunction) -> bool {
     let mut changed = false;
 
     for (_, ins) in func.ins.iter_mut() {
-        changed |= fold_ins(ins, &mut func.values);
+        changed |= fold_bin_ins(ins, &mut func.values);
+        changed |= fold_const_cast(ins, &mut func.values);
     }
 
     changed
 }
 
-fn fold_ins(ins: &mut Ins, values: &mut Values) -> bool {
+fn fold_bin_ins(ins: &mut Ins, values: &mut Values) -> bool {
     let InsKind::BinOp {
         op,
         dst,
@@ -108,4 +110,29 @@ fn compute_const(op: BinOp, lhs: Imm, rhs: Imm) -> Option<Imm> {
         BinOp::ShifArithRight => return None,
         BinOp::Condition(_condition) => return None,
     }))
+}
+
+fn fold_const_cast(ins: &mut Ins, values: &mut Values) -> bool {
+    let &InsKind::Cast { dst, src } = &ins.kind else {
+        return false;
+    };
+
+    let Value::Imm(imm) = &values[src] else {
+        return false;
+    };
+
+    let Some(target_ty) = values.val_ty(dst) else {
+        return false;
+    };
+
+    let replacement = match (imm, target_ty) {
+        (Imm::Bool(x), Ty::U8) => Imm::U8(if *x { 1 } else { 0 }),
+        _ => return false,
+    };
+
+    log::trace!(">> Folding {ins} into {replacement}");
+
+    values[dst] = Value::Imm(replacement);
+    ins.kind = InsKind::Hole;
+    true
 }
