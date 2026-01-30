@@ -104,37 +104,7 @@ fn main() {
             func.addr()
         );
         let mut ssa_func = lir::flat::func_from_flat(func, &blocks);
-        ssa_func.resolve();
-        lir::analysis::reconstruct_comp::exec(&mut ssa_func);
-        lir::analysis::dce::exec(&mut ssa_func);
-        loop {
-            let changed = lir::analysis::const_folding::run(&mut ssa_func);
-            if !changed {
-                break;
-            }
-        }
-
-        loop {
-            let changed = lir::analysis::reassociate::run(&mut ssa_func);
-            if !changed {
-                break;
-            }
-        }
-
-        loop {
-            let changed = lir::analysis::cse::run(&mut ssa_func);
-            if !changed {
-                break;
-            }
-        }
-
-        ssa_func.resolve();
-        lir::analysis::reconstruct_comp::exec(&mut ssa_func);
-        lir::analysis::dce::exec(&mut ssa_func);
-
-        lir::analysis::fill_static_reads::exec(&mut ssa_func, binary.sections.rdata);
-        lir::analysis::promote_known_targets::run(&mut ssa_func);
-
+        lir::analysis::optimise(&mut ssa_func, binary.sections.rdata);
         println!("{}", ssa_func.fmt());
         ssa_functions.push(ssa_func);
     }

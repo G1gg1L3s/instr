@@ -44,7 +44,7 @@ pub fn run(func: &mut SsaFunction) -> bool {
             let (key, dst) = key_dst;
 
             if let Some(&prev) = expr_table.get(&key) {
-                log::trace!("> [func {}] Replaceing {dst} with {prev}", func.addr);
+                log::trace!("> [func {}] Replacing {dst} with {prev}", func.addr);
 
                 func.values[dst] = Value::Alias { to: prev };
                 ins.kind = InsKind::Hole;
