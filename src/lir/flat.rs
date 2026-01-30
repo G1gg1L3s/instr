@@ -194,6 +194,7 @@ pub fn func_from_flat(
                 } => block_state.lower_set_bytes(dst, base, value, start),
                 flat_ir::Instr::Convert { dst, src } => block_state.lower_convert(dst, src),
                 flat_ir::Instr::Not { dst, src } => block_state.lower_not(dst, src),
+                flat_ir::Instr::Nop => {}
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
