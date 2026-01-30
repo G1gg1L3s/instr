@@ -5,7 +5,7 @@ use crate::{
     flat_ir::{self, AnnotatedInstr, Flagx},
     lir::{
         block::BlockId,
-        flags::{Flags, FlagsGroup},
+        flags::{Flag, Flags, FlagsGroup},
         func::SsaFunction,
         ins::{BinOp, CallTarget, Condition, JumpTarget, MemSpace},
         io::Io,
@@ -254,7 +254,26 @@ impl<'a> BlockState<'a> {
                 let var = self.get_var(FlatVar::Temp(temp_id));
                 self.state.builder.read_var(var)
             }
-            flat_ir::Value::Flag(_flag) => self.ins().unimplemented(),
+            flat_ir::Value::Flag(flag) => {
+                let flags = self.get_var(FlatVar::Flags);
+                let flags_val = self.state.builder.read_var(flags);
+                let ty = self.state.builder.func.val_ty(flags_val);
+                let Some(Ty::Flags(flags)) = ty else {
+                    log::warn!("invalid value {flags_val}: expected flags, found: {ty:?}");
+                    return self.ins().unimplemented();
+                };
+
+                let ssa_flag = flag_to_ssa(flag);
+                if !flags.contains(ssa_flag.to_flags()) {
+                    panic!(
+                        "required flag: {}, but only provided: {:?}",
+                        ssa_flag,
+                        FlagsGroup::new(flags)
+                    );
+                }
+
+                self.ins().extract_flag(flags_val, ssa_flag)
+            }
             flat_ir::Value::X87StatusWord => self.ins().unimplemented(),
         }
     }
@@ -510,6 +529,15 @@ impl<'a> BlockState<'a> {
 
         let dst_val = self.ins().cast(src, ty);
         self.lower_write_val(dst, dst_val);
+    }
+}
+
+fn flag_to_ssa(flag: flat_ir::Flag) -> Flag {
+    match flag {
+        flat_ir::Flag::Cf => Flag::Carry,
+        flat_ir::Flag::Zf => Flag::Zero,
+        flat_ir::Flag::Sf => Flag::Sign,
+        flat_ir::Flag::Of => Flag::Overflow,
     }
 }
 

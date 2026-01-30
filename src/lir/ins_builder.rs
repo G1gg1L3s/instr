@@ -2,7 +2,7 @@ use crate::{
     addr::Addr,
     lir::{
         block::BlockId,
-        flags::FlagsGroup,
+        flags::{Flag, FlagsGroup},
         func::SsaFunction,
         ins::{
             BinOp, CallTarget, Condition, Ins, InsKind, JumpTarget, MemSpace, Terminator,
@@ -190,6 +190,12 @@ impl<'a> InsBuilder<'a> {
     pub fn cast(&mut self, src: ValueId, ty: Ty) -> ValueId {
         let dst = self.func.values.add(Value::Temp { ty });
         self.emit(InsKind::Cast { dst, src });
+        dst
+    }
+
+    pub fn extract_flag(&mut self, src: ValueId, flag: Flag) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty: Ty::Bool });
+        self.emit(InsKind::ExtractFlag { dst, src, flag });
         dst
     }
 }

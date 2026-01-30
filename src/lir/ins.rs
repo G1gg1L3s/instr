@@ -1,6 +1,6 @@
 use crate::{
     addr::Addr,
-    lir::{block::BlockId, fmt::FmtList, io::IoValues, value::ValueId},
+    lir::{block::BlockId, flags::Flag, fmt::FmtList, io::IoValues, value::ValueId},
 };
 
 use std::ops::{Index, IndexMut};
@@ -181,6 +181,12 @@ pub enum InsKind {
         dst: ValueId,
         src: ValueId,
     },
+
+    ExtractFlag {
+        dst: ValueId,
+        src: ValueId,
+        flag: Flag,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -292,6 +298,10 @@ impl Ins {
                 callback(dst);
                 callback(src);
             }
+            InsKind::ExtractFlag { dst, src, flag: _ } => {
+                callback(dst);
+                callback(src);
+            }
         }
     }
 
@@ -370,6 +380,13 @@ impl Ins {
             InsKind::Cast { dst: _, src } => {
                 callback(*src);
             }
+            InsKind::ExtractFlag {
+                dst: _,
+                src,
+                flag: _,
+            } => {
+                callback(*src);
+            }
         }
     }
 
@@ -386,6 +403,7 @@ impl Ins {
             InsKind::Extract { .. } => false,
             InsKind::Insert { .. } => false,
             InsKind::Cast { .. } => false,
+            InsKind::ExtractFlag { .. } => false,
         }
     }
 
@@ -408,6 +426,7 @@ impl Ins {
             InsKind::Extract { dst, .. } => res.push(*dst).unwrap(),
             InsKind::Insert { dst, .. } => res.push(*dst).unwrap(),
             InsKind::Cast { dst, .. } => res.push(*dst).unwrap(),
+            InsKind::ExtractFlag { dst, .. } => res.push(*dst).unwrap(),
         }
 
         res
@@ -470,6 +489,7 @@ impl std::fmt::Display for Ins {
                 write!(f, "{dst} = insert {base}[{offset}..] <- {value}")
             }
             InsKind::Cast { dst, src } => write!(f, "{dst} = cast {src}"),
+            InsKind::ExtractFlag { dst, src, flag } => write!(f, "{dst} = flag.{flag} {src}"),
         }
     }
 }

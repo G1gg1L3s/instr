@@ -183,6 +183,12 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*src)
                 )
             }
+            InsKind::ExtractFlag { dst, src, flag } => write!(
+                f,
+                "{} = flag.{flag} {}",
+                self.fmt.val(*dst),
+                self.fmt.val(*src)
+            ),
         }
     }
 }
