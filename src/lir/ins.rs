@@ -176,6 +176,11 @@ pub enum InsKind {
         value: ValueId,
         offset: u8,
     },
+
+    Cast {
+        dst: ValueId,
+        src: ValueId,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -283,6 +288,10 @@ impl Ins {
                 callback(base);
                 callback(value);
             }
+            InsKind::Cast { dst, src } => {
+                callback(dst);
+                callback(src);
+            }
         }
     }
 
@@ -358,6 +367,9 @@ impl Ins {
                 callback(*base);
                 callback(*value);
             }
+            InsKind::Cast { dst: _, src } => {
+                callback(*src);
+            }
         }
     }
 
@@ -373,6 +385,7 @@ impl Ins {
             InsKind::Call { .. } => true,
             InsKind::Extract { .. } => false,
             InsKind::Insert { .. } => false,
+            InsKind::Cast { .. } => false,
         }
     }
 
@@ -394,6 +407,7 @@ impl Ins {
             InsKind::Call { result, .. } => res.extend(result.values()),
             InsKind::Extract { dst, .. } => res.push(*dst).unwrap(),
             InsKind::Insert { dst, .. } => res.push(*dst).unwrap(),
+            InsKind::Cast { dst, .. } => res.push(*dst).unwrap(),
         }
 
         res
@@ -455,6 +469,7 @@ impl std::fmt::Display for Ins {
             } => {
                 write!(f, "{dst} = insert {base}[{offset}..] <- {value}")
             }
+            InsKind::Cast { dst, src } => write!(f, "{dst} = cast {src}"),
         }
     }
 }

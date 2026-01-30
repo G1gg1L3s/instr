@@ -186,4 +186,10 @@ impl<'a> InsBuilder<'a> {
         });
         dst
     }
+
+    pub fn cast(&mut self, src: ValueId, ty: Ty) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty });
+        self.emit(InsKind::Cast { dst, src });
+        dst
+    }
 }

@@ -192,6 +192,7 @@ pub fn func_from_flat(
                     value,
                     start,
                 } => block_state.lower_set_bytes(dst, base, value, start),
+                flat_ir::Instr::Convert { dst, src } => block_state.lower_convert(dst, src),
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -253,7 +254,7 @@ impl<'a> BlockState<'a> {
                 let var = self.get_var(FlatVar::Temp(temp_id));
                 self.state.builder.read_var(var)
             }
-            flat_ir::Value::Flag(_flag) => todo!(),
+            flat_ir::Value::Flag(_flag) => self.ins().unimplemented(),
             flat_ir::Value::X87StatusWord => self.ins().unimplemented(),
         }
     }
@@ -501,6 +502,14 @@ impl<'a> BlockState<'a> {
 
         let val = self.ins().insert(base, value, start);
         self.lower_write_val(dst, val);
+    }
+
+    fn lower_convert(&mut self, dst: flat_ir::Value, src: flat_ir::Value) {
+        let src = self.lower_val(src);
+        let ty = self.value_ty(dst);
+
+        let dst_val = self.ins().cast(src, ty);
+        self.lower_write_val(dst, dst_val);
     }
 }
 

@@ -173,6 +173,27 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*value)
                 ),
             },
+
+            InsKind::Cast { dst, src } => {
+                write!(
+                    f,
+                    "{} = cast.{} {}",
+                    self.fmt.val(*dst),
+                    MaybeTy(self.fmt.func.val_ty(*dst)),
+                    self.fmt.val(*src)
+                )
+            }
+        }
+    }
+}
+
+struct MaybeTy(Option<Ty>);
+
+impl std::fmt::Display for MaybeTy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(x) => x.fmt(f),
+            None => write!(f, "???"),
         }
     }
 }
