@@ -396,7 +396,7 @@ fn maybe_fmt_alias(
     f: &mut std::fmt::Formatter<'_>,
     result: ValueId,
 ) -> Result<(), std::fmt::Error> {
-    let _: () = if let Some(aliases) = aliases.get(&result) {
+    if let Some(aliases) = aliases.get(&result) {
         for alias in aliases {
             writeln!(
                 f,

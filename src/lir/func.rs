@@ -100,10 +100,11 @@ impl SsaFunction {
     }
 
     pub(crate) fn inverse_aliases(&self) -> HashMap<ValueId, Vec<ValueId>> {
-        let mut res = std::collections::HashMap::<ValueId, Vec<_>>::new();
-        for (val_id, val) in self.values.iter() {
-            if let Value::Alias { to } = val {
-                res.entry(*to).or_default().push(val_id);
+        let mut res = HashMap::<ValueId, Vec<_>>::new();
+        for val_id in self.values.keys() {
+            let resolved = self.values.resolve_alias(val_id);
+            if resolved != val_id {
+                res.entry(resolved).or_default().push(val_id);
             }
         }
         res
@@ -131,17 +132,23 @@ impl SsaFunction {
     }
 
     pub fn patch_resolve_aliases(&mut self) -> bool {
-        let mut patched = false;
+        let mut patched = vec![];
+
         for id in self.values.keys() {
             let resolved = self.resolve_alias(id);
 
             if resolved != id {
-                patched = true;
+                log::trace!(">> Patching alias {id} -> {resolved}");
                 self.patch_replace_value(id, resolved);
-                self.values[id] = Value::Invalid;
+                patched.push(id);
             }
         }
-        patched
+
+        for val_id in patched.iter() {
+            self.values[*val_id] = Value::Invalid;
+        }
+
+        patched.len() > 0
     }
 
     fn patch_replace_value(&mut self, from: ValueId, to: ValueId) {
@@ -193,7 +200,7 @@ impl SsaFunction {
             self.patch_remove_block_param_and_calls(block_id, phi);
             self.set_alias(phi, trivial);
         }
-        
+
         !to_patch.is_empty()
     }
 
