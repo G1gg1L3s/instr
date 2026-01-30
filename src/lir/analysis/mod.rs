@@ -10,6 +10,7 @@ pub mod fill_static_reads;
 pub mod promote_known_targets;
 pub mod reassociate;
 pub mod reconstruct_comp;
+pub(crate) mod reconstruct_flag_comp;
 
 pub fn optimise(func: &mut SsaFunction, rdata: SectionData<'_>) {
     func.resolve();
@@ -28,6 +29,7 @@ pub fn optimise(func: &mut SsaFunction, rdata: SectionData<'_>) {
         func.patch_resolve_aliases();
 
         reconstruct_comp::exec(func);
+        changed |= reconstruct_flag_comp::exec(func);
         dce::exec(func);
 
         fill_static_reads::exec(func, rdata);

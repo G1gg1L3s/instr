@@ -42,12 +42,13 @@ fn fold_ins(ins: &mut Ins, values: &mut Values) -> bool {
     let rhs_val = &values[*rhs];
 
     if let (Value::Imm(lhs_imm), Value::Imm(rhs_imm)) = (lhs_val, rhs_val)
-        && let Some(res) = compute_const(*op, *lhs_imm, *rhs_imm) {
-            log::trace!(">> Folding {dst} = {lhs} {op} {rhs} into {dst} = {res}");
-            values[*dst] = Value::Imm(res);
-            ins.kind = InsKind::Hole;
-            return true;
-        };
+        && let Some(res) = compute_const(*op, *lhs_imm, *rhs_imm)
+    {
+        log::trace!(">> Folding {dst} = {lhs} {op} {rhs} into {dst} = {res}");
+        values[*dst] = Value::Imm(res);
+        ins.kind = InsKind::Hole;
+        return true;
+    };
 
     if let (BinOp::BitOr, Some(res)) = (*op, to_0xff_imm(lhs_val).or(to_0xff_imm(rhs_val))) {
         log::info!(">> Folding {dst} = {lhs} {op} {rhs} into {dst} = {res}");
@@ -69,6 +70,7 @@ fn to_0xff_imm(imm: &Value) -> Option<Imm> {
 
 fn to_0xff(imm: Imm) -> Option<Imm> {
     match imm {
+        Imm::Bool(_) => None,
         Imm::U8(x) => (x == 0xff).then_some(Imm::U8(0xff)),
         Imm::U16(x) => (x == 0xffff).then_some(Imm::U16(0xffff)),
         Imm::U32(x) => (x == 0xffffffff).then_some(Imm::U32(0xffffffff)),

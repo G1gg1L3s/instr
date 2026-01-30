@@ -121,6 +121,7 @@ impl std::fmt::Display for ValueId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Imm {
+    Bool(bool),
     U8(u8),
     U16(u16),
     U32(u32),
@@ -129,6 +130,7 @@ pub enum Imm {
 impl Imm {
     pub fn ty(self) -> Ty {
         match self {
+            Imm::Bool(_) => Ty::Bool,
             Imm::U8(_) => Ty::U8,
             Imm::U16(_) => Ty::U16,
             Imm::U32(_) => Ty::U32,
@@ -139,6 +141,7 @@ impl Imm {
 impl std::fmt::Display for Imm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Imm::Bool(x) => write!(f, "{x}"),
             Imm::U8(x) => write!(f, "{x}.u8"),
             Imm::U16(x) => write!(f, "{x}.u16"),
             Imm::U32(x) => write!(f, "{x}.u32"),

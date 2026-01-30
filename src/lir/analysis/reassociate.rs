@@ -154,6 +154,7 @@ enum AssocImm {
 impl From<Imm> for AssocImm {
     fn from(value: Imm) -> Self {
         match value {
+            Imm::Bool(_) => todo!(),
             Imm::U8(x) => Self::U8(x),
             Imm::U16(x) => Self::U16(x),
             Imm::U32(x) => Self::U32(x),
