@@ -6,7 +6,7 @@ use crate::{
         func::SsaFunction,
         ins::{
             BinOp, CallTarget, Condition, Ins, InsKind, JumpTarget, MemSpace, Terminator,
-            TerminatorKind,
+            TerminatorKind, UnOp,
         },
         io::{Io, IoValues},
         ty::Ty,
@@ -66,6 +66,12 @@ impl<'a> InsBuilder<'a> {
         });
 
         (dst, flags)
+    }
+
+    pub fn un(&mut self, op: UnOp, src: ValueId) -> ValueId {
+        let dst = self.with_ty(src);
+        self.emit(InsKind::UnOp { op, dst, src });
+        dst
     }
 
     fn with_ty(&mut self, lhs: ValueId) -> ValueId {

@@ -80,6 +80,9 @@ impl<'a> Display for InsFmt<'a> {
                     write!(f, "{dst} = {lhs} {op} {rhs}")
                 }
             }
+            InsKind::UnOp { op, dst, src } => {
+                write!(f, "{} = {op} {}", self.fmt.val(*dst), self.fmt.val(*src))
+            }
             InsKind::Uninit { dst } => {
                 write!(f, "{} = ???", self.fmt.val(*dst),)
             }

@@ -16,7 +16,7 @@ use crate::{
     third_cfg,
 };
 
-use super::ins_builder::InsBuilder;
+use super::{ins::UnOp, ins_builder::InsBuilder};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum FlatVar {
@@ -193,6 +193,7 @@ pub fn func_from_flat(
                     start,
                 } => block_state.lower_set_bytes(dst, base, value, start),
                 flat_ir::Instr::Convert { dst, src } => block_state.lower_convert(dst, src),
+                flat_ir::Instr::Not { dst, src } => block_state.lower_not(dst, src),
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -528,6 +529,12 @@ impl<'a> BlockState<'a> {
         let ty = self.value_ty(dst);
 
         let dst_val = self.ins().cast(src, ty);
+        self.lower_write_val(dst, dst_val);
+    }
+
+    fn lower_not(&mut self, dst: flat_ir::Value, src: flat_ir::Value) {
+        let src = self.lower_val(src);
+        let dst_val = self.ins().un(UnOp::BitNot, src);
         self.lower_write_val(dst, dst_val);
     }
 }

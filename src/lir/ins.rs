@@ -124,6 +124,19 @@ impl std::fmt::Display for BinOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UnOp {
+    BitNot,
+}
+
+impl std::fmt::Display for UnOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnOp::BitNot => write!(f, "bitnot"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum InsKind {
     Hole,
@@ -133,6 +146,11 @@ pub enum InsKind {
         lhs: ValueId,
         rhs: ValueId,
         flags: Option<ValueId>,
+    },
+    UnOp {
+        op: UnOp,
+        dst: ValueId,
+        src: ValueId,
     },
     Uninit {
         dst: ValueId,
@@ -230,6 +248,10 @@ impl Ins {
                 callback(rhs);
                 flags.as_mut().map(callback);
             }
+            InsKind::UnOp { op: _, dst, src } => {
+                callback(dst);
+                callback(src);
+            }
             InsKind::Uninit { dst } => callback(dst),
             InsKind::Unimpl { dst } => callback(dst),
             InsKind::Load {
@@ -318,6 +340,7 @@ impl Ins {
                 callback(*lhs);
                 callback(*rhs);
             }
+            InsKind::UnOp { op: _, dst: _, src } => callback(*src),
             InsKind::Uninit { .. } => {}
             InsKind::Unimpl { .. } => {}
             InsKind::Load {
@@ -394,6 +417,7 @@ impl Ins {
         match &self.kind {
             InsKind::Hole => false,
             InsKind::BinOp { .. } => false,
+            InsKind::UnOp { .. } => false,
             InsKind::Uninit { .. } => false,
             InsKind::Unimpl { .. } => true,
             InsKind::Load { .. } => false,
@@ -418,6 +442,7 @@ impl Ins {
                     res.push(*flags).unwrap()
                 }
             }
+            InsKind::UnOp { op: _, dst, src: _ } => res.push(*dst).unwrap(),
             InsKind::Unimpl { dst } => res.push(*dst).unwrap(),
             InsKind::Load { dst, .. } => res.push(*dst).unwrap(),
             InsKind::Cond { dst, .. } => res.push(*dst).unwrap(),
@@ -450,6 +475,7 @@ impl std::fmt::Display for Ins {
                     write!(f, "{dst} = {lhs} {op} {rhs}")
                 }
             }
+            InsKind::UnOp { op, dst, src } => write!(f, "{dst} = {op} {src}"),
             InsKind::Uninit { dst } => write!(f, "{dst} = ???"),
             InsKind::Unimpl { dst } => write!(f, "{dst} = unimplemented"),
             InsKind::Load {
