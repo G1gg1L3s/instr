@@ -137,6 +137,23 @@ impl std::fmt::Display for UnOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawSize {
+    U8,
+    U16,
+    U32,
+}
+
+impl std::fmt::Display for RawSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RawSize::U8 => write!(f, "u8"),
+            RawSize::U16 => write!(f, "u16"),
+            RawSize::U32 => write!(f, "u32"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum InsKind {
     Hole,
@@ -204,6 +221,25 @@ pub enum InsKind {
         dst: ValueId,
         src: ValueId,
         flag: Flag,
+    },
+
+    Memset {
+        dst_mem: ValueId,
+        src_mem: ValueId,
+
+        addr: ValueId,
+        value: ValueId,
+        count: ValueId,
+    },
+
+    Memcpy {
+        dst_mem: ValueId,
+        src_mem: ValueId,
+
+        dst_addr: ValueId,
+        src_addr: ValueId,
+        count: ValueId,
+        size: RawSize,
     },
 }
 
@@ -324,6 +360,33 @@ impl Ins {
                 callback(dst);
                 callback(src);
             }
+            InsKind::Memset {
+                dst_mem,
+                src_mem,
+                addr,
+                value,
+                count,
+            } => {
+                callback(dst_mem);
+                callback(src_mem);
+                callback(addr);
+                callback(value);
+                callback(count);
+            }
+            InsKind::Memcpy {
+                dst_mem,
+                src_mem,
+                dst_addr,
+                src_addr,
+                count,
+                size: _,
+            } => {
+                callback(dst_mem);
+                callback(src_mem);
+                callback(dst_addr);
+                callback(src_addr);
+                callback(count);
+            }
         }
     }
 
@@ -410,6 +473,31 @@ impl Ins {
             } => {
                 callback(*src);
             }
+            InsKind::Memset {
+                dst_mem: _,
+                src_mem,
+                addr,
+                value,
+                count,
+            } => {
+                callback(*src_mem);
+                callback(*addr);
+                callback(*value);
+                callback(*count);
+            }
+            InsKind::Memcpy {
+                dst_mem: _,
+                src_mem,
+                dst_addr,
+                src_addr,
+                count,
+                size: _,
+            } => {
+                callback(*src_mem);
+                callback(*src_addr);
+                callback(*dst_addr);
+                callback(*count);
+            }
         }
     }
 
@@ -428,6 +516,8 @@ impl Ins {
             InsKind::Insert { .. } => false,
             InsKind::Cast { .. } => false,
             InsKind::ExtractFlag { .. } => false,
+            InsKind::Memcpy { .. } => true,
+            InsKind::Memset { .. } => true,
         }
     }
 
@@ -452,6 +542,21 @@ impl Ins {
             InsKind::Insert { dst, .. } => res.push(*dst).unwrap(),
             InsKind::Cast { dst, .. } => res.push(*dst).unwrap(),
             InsKind::ExtractFlag { dst, .. } => res.push(*dst).unwrap(),
+            InsKind::Memset {
+                dst_mem,
+                src_mem: _,
+                addr: _,
+                value: _,
+                count: _,
+            } => res.push(*dst_mem).unwrap(),
+            InsKind::Memcpy {
+                dst_mem,
+                src_mem: _,
+                dst_addr: _,
+                src_addr: _,
+                count: _,
+                size: _,
+            } => res.push(*dst_mem).unwrap(),
         }
 
         res
@@ -516,6 +621,32 @@ impl std::fmt::Display for Ins {
             }
             InsKind::Cast { dst, src } => write!(f, "{dst} = cast {src}"),
             InsKind::ExtractFlag { dst, src, flag } => write!(f, "{dst} = flag.{flag} {src}"),
+            InsKind::Memset {
+                dst_mem,
+                src_mem,
+                addr,
+                value,
+                count,
+            } => {
+                write!(
+                    f,
+                    "{dst_mem} = __memset {src_mem} ({addr}, {value}, {count})"
+                )
+            }
+
+            InsKind::Memcpy {
+                dst_mem,
+                src_mem,
+                dst_addr,
+                src_addr,
+                count,
+                size,
+            } => {
+                write!(
+                    f,
+                    "{dst_mem} = __memcpy {src_mem} ({dst_addr}, {src_addr}, {size}:{count})",
+                )
+            }
         }
     }
 }

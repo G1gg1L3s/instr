@@ -5,7 +5,7 @@ use crate::{
         flags::{Flag, FlagsGroup},
         func::SsaFunction,
         ins::{
-            BinOp, CallTarget, Condition, Ins, InsKind, JumpTarget, MemSpace, Terminator,
+            BinOp, CallTarget, Condition, Ins, InsKind, JumpTarget, MemSpace, RawSize, Terminator,
             TerminatorKind, UnOp,
         },
         io::{Io, IoValues},
@@ -159,7 +159,7 @@ impl<'a> InsBuilder<'a> {
         mem: ValueId,
         space: MemSpace,
     ) -> ValueId {
-        let dst_mem = self.func.values.add(Value::Mem);
+        let dst_mem = self.func.values.add(Value::Temp { ty: Ty::Mem });
         self.emit(InsKind::Store {
             dst_mem,
             src_mem: mem,
@@ -202,6 +202,46 @@ impl<'a> InsBuilder<'a> {
     pub fn extract_flag(&mut self, src: ValueId, flag: Flag) -> ValueId {
         let dst = self.func.values.add(Value::Temp { ty: Ty::Bool });
         self.emit(InsKind::ExtractFlag { dst, src, flag });
+        dst
+    }
+
+    pub fn memset(
+        &mut self,
+        src_mem: ValueId,
+        addr: ValueId,
+        value: ValueId,
+        count: ValueId,
+    ) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty: Ty::Mem });
+        self.emit(InsKind::Memset {
+            dst_mem: dst,
+            src_mem,
+            addr,
+            value,
+            count,
+        });
+        dst
+    }
+
+    pub fn memcpy(
+        &mut self,
+
+        src_mem: ValueId,
+
+        dst_addr: ValueId,
+        src_addr: ValueId,
+        count: ValueId,
+        size: RawSize,
+    ) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty: Ty::Mem });
+        self.emit(InsKind::Memcpy {
+            dst_mem: dst,
+            src_mem,
+            dst_addr,
+            src_addr,
+            count,
+            size,
+        });
         dst
     }
 }

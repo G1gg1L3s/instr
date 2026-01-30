@@ -7,7 +7,7 @@ use crate::{
         block::BlockId,
         flags::{Flag, Flags, FlagsGroup},
         func::SsaFunction,
-        ins::{BinOp, CallTarget, Condition, JumpTarget, MemSpace},
+        ins::{BinOp, CallTarget, Condition, JumpTarget, MemSpace, RawSize},
         io::Io,
         ssa_builder::{SsaBuilder, VarId},
         ty::Ty,
@@ -195,6 +195,15 @@ pub fn func_from_flat(
                 flat_ir::Instr::Convert { dst, src } => block_state.lower_convert(dst, src),
                 flat_ir::Instr::Not { dst, src } => block_state.lower_not(dst, src),
                 flat_ir::Instr::Nop => {}
+                flat_ir::Instr::Memset { addr, value, count } => {
+                    block_state.lower_memset(addr, value, count)
+                }
+                flat_ir::Instr::Memcpy {
+                    dst_addr,
+                    src_addr,
+                    count,
+                    size,
+                } => block_state.lower_memcpy(dst_addr, src_addr, count, size),
                 _ => {
                     block_state.state.builder.ins().unimplemented();
                 }
@@ -537,6 +546,43 @@ impl<'a> BlockState<'a> {
         let src = self.lower_val(src);
         let dst_val = self.ins().un(UnOp::BitNot, src);
         self.lower_write_val(dst, dst_val);
+    }
+
+    fn lower_memset(&mut self, addr: flat_ir::Value, value: flat_ir::Value, count: flat_ir::Value) {
+        let addr = self.lower_val(addr);
+        let value = self.lower_val(value);
+        let count = self.lower_val(count);
+
+        let mem_var = self.get_var(FlatVar::Mem);
+        let mem: ValueId = self.state.builder.read_var(mem_var);
+
+        let mem = self.ins().memset(mem, addr, value, count);
+        self.state.builder.write_var(mem_var, mem);
+    }
+
+    fn lower_memcpy(
+        &mut self,
+        dst_addr: flat_ir::Value,
+        src_addr: flat_ir::Value,
+        count: flat_ir::Value,
+        size: flat_ir::Size,
+    ) {
+        let dst_addr = self.lower_val(dst_addr);
+        let src_addr = self.lower_val(src_addr);
+        let count = self.lower_val(count);
+
+        let size = match size {
+            flat_ir::Size::U8 => RawSize::U8,
+            flat_ir::Size::U16 => RawSize::U16,
+            flat_ir::Size::U32 => RawSize::U32,
+            _ => unreachable!(),
+        };
+
+        let mem_var = self.get_var(FlatVar::Mem);
+        let mem: ValueId = self.state.builder.read_var(mem_var);
+
+        let mem = self.ins().memcpy(mem, dst_addr, src_addr, count, size);
+        self.state.builder.write_var(mem_var, mem);
     }
 }
 

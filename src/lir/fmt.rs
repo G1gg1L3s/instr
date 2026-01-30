@@ -192,6 +192,43 @@ impl<'a> Display for InsFmt<'a> {
                 self.fmt.val(*dst),
                 self.fmt.val(*src)
             ),
+
+            InsKind::Memset {
+                dst_mem,
+                src_mem,
+                addr,
+                value,
+                count,
+            } => {
+                write!(
+                    f,
+                    "{} = __memset {} ({}, {}, {})",
+                    self.fmt.val(*dst_mem),
+                    self.fmt.val(*src_mem),
+                    self.fmt.val(*addr),
+                    self.fmt.val(*value),
+                    self.fmt.val(*count),
+                )
+            }
+
+            InsKind::Memcpy {
+                dst_mem,
+                src_mem,
+                dst_addr,
+                src_addr,
+                count,
+                size,
+            } => {
+                write!(
+                    f,
+                    "{} = __memcpy {} ({}, {}, {size}:{})",
+                    self.fmt.val(*dst_mem),
+                    self.fmt.val(*src_mem),
+                    self.fmt.val(*dst_addr),
+                    self.fmt.val(*src_addr),
+                    self.fmt.val(*count),
+                )
+            }
         }
     }
 }
@@ -216,8 +253,8 @@ impl<'a> Display for ValueFmt<'a> {
             Value::Temp {
                 ty: Ty::Flags(flags),
             } => write!(f, "{}#{}", FlagsGroup::new(*flags), self.val.id()),
+            Value::Temp { ty: Ty::Mem } => write!(f, "mem{}", self.val.id()),
             Value::Temp { .. } | Value::Alias { .. } => write!(f, "{}", self.val),
-            Value::Mem => write!(f, "mem{}", self.val.id()),
             Value::Imm(x) => write!(f, "{x}"),
         }
     }
