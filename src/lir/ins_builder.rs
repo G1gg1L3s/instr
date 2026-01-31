@@ -23,8 +23,8 @@ pub struct InsBuilder<'a> {
 }
 
 impl<'a> InsBuilder<'a> {
-    pub fn prepend_uninit_read(&mut self) -> ValueId {
-        let dst = self.func.values.add(Value::Invalid);
+    pub fn prepend_uninit_read(&mut self, ty: Ty) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty });
         let ins = self
             .func
             .ins

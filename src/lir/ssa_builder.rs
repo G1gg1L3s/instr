@@ -167,7 +167,8 @@ impl SsaBuilder {
 
         match &self.func.blocks[block].predecessors.as_slice() {
             [] => {
-                let val = self.ins().prepend_uninit_read();
+                let ty = self.vars[var].ty;
+                let val = self.ins().prepend_uninit_read(ty);
                 self.write_var_in_block(block, var, val);
                 log::trace!("    >> Predecessors are empty, creating uninit read {var} -> {val}");
                 return val;
@@ -250,7 +251,7 @@ impl SsaBuilder {
                 log::trace!(
                     "        >> Predecessors are empty, creating uninit read {var} -> {phi}"
                 );
-                let uninit = self.func.ins(block).prepend_uninit_read();
+                let uninit = self.func.ins(block).prepend_uninit_read(self.vars[var].ty);
                 self.func.patch_remove_block_param(block, phi);
                 self.func.set_alias(phi, uninit);
                 continue;
