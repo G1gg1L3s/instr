@@ -32,7 +32,7 @@ pub fn exec(func: &mut SsaFunction) {
 
             let &InsKind::BinOp {
                 op,
-                dst: _,
+                dst: bin_res,
                 lhs,
                 rhs,
                 flags: flags_dst,
@@ -57,6 +57,10 @@ pub fn exec(func: &mut SsaFunction) {
                     BinOp::BitAnd,
                 ) if lhs == rhs => {
                     worklist.push((ins_id, cond, lhs, Arg::Imm(0), dst));
+                }
+
+                (Condition::Equal, BinOp::Add) => {
+                    worklist.push((ins_id, cond, bin_res, Arg::Imm(0), dst));
                 }
                 _ => {}
             }
