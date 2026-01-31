@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     SectionData,
@@ -21,7 +21,7 @@ pub fn run(func: &SsaFunction) -> Vec<JumpTableCandidate> {
         let Some((ins_addr, base_addr, index)) = detect_jump_table(func, &def_use, block) else {
             continue;
         };
-        let size = derive_size(func, index);
+        let size = derive_size(func, index, block);
         res.push(JumpTableCandidate {
             ins_addr,
             base_addr,
@@ -107,41 +107,45 @@ fn detect_jump_table(
     ))
 }
 
-fn derive_size(func: &SsaFunction, jump_table_idx: ValueId) -> Option<u32> {
+fn derive_size(func: &SsaFunction, jump_table_idx: ValueId, block: &Block) -> Option<u32> {
     let mut candidates = vec![];
 
-    for ins in func.ins.values() {
-        let InsKind::BinOp {
-            op: BinOp::Condition(Condition::UnsignedLess | Condition::UnsignedGreater),
-            dst: _,
-            lhs,
-            rhs,
-            flags: _,
-        } = ins.kind
-        else {
-            continue;
-        };
+    for block in &block.predecessors {
+        let block = &func.blocks[*block];
+        for ins_id in &block.ins {
+            let ins = &func.ins[*ins_id];
+            let InsKind::BinOp {
+                op: BinOp::Condition(Condition::UnsignedLess | Condition::UnsignedGreater),
+                dst: _,
+                lhs,
+                rhs,
+                flags: _,
+            } = ins.kind
+            else {
+                continue;
+            };
 
-        let (idx, size) = match (lhs, rhs) {
-            (idx, size) if idx == jump_table_idx => (idx, size),
-            (size, idx) if idx == jump_table_idx => (idx, size),
-            _ => continue,
-        };
+            let (idx, size) = match (lhs, rhs) {
+                (idx, size) if idx == jump_table_idx => (idx, size),
+                (size, idx) if idx == jump_table_idx => (idx, size),
+                _ => continue,
+            };
 
-        let Value::Imm(imm) = &func.values[size] else {
-            log::warn!(
-                "> Cannot compute jump table size in function {}, index {}",
-                func.addr,
-                idx
-            );
-            continue;
-        };
+            let Value::Imm(imm) = &func.values[size] else {
+                log::warn!(
+                    "> Cannot compute jump table size in function {}, index {}",
+                    func.addr,
+                    idx
+                );
+                continue;
+            };
 
-        match imm {
-            Imm::U8(x) => candidates.push(u32::from(*x)),
-            Imm::U16(x) => candidates.push(u32::from(*x)),
-            Imm::U32(x) => candidates.push(u32::from(*x)),
-            _ => continue,
+            match imm {
+                Imm::U8(x) => candidates.push(u32::from(*x)),
+                Imm::U16(x) => candidates.push(u32::from(*x)),
+                Imm::U32(x) => candidates.push(u32::from(*x)),
+                _ => continue,
+            }
         }
     }
 

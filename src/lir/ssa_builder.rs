@@ -177,7 +177,7 @@ impl SsaBuilder {
                     return Some(*candidate);
                 }
                 if candidate_flags.intersects(flags) {
-                    todo!("partial flag intersection")
+                    log::error!("partial flag intersection")
                 }
             }
             None
