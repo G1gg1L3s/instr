@@ -86,7 +86,7 @@ pub struct SsaBuilder {
 
     blocks: HashMap<BlockId, BuilderBlock>,
 
-    variables: HashMap<VarId, HashMap<BlockId, ValueId>>,
+    variables: HashMap<VarId, HashMap<BlockId, Vec<ValueId>>>,
     incomplete_phis: HashMap<BlockId, Vec<(VarId, ValueId)>>,
 }
 
@@ -131,6 +131,10 @@ impl SsaBuilder {
         self.func.ins(self.current_block.unwrap())
     }
 
+    pub fn set_var_ty(&mut self, var: VarId, ty: Ty) {
+        self.vars[var].ty = ty;
+    }
+
     // --- Variable handling --------------------
 
     pub fn declare_var(&mut self, ty: Ty) -> VarId {
@@ -142,13 +146,50 @@ impl SsaBuilder {
     }
 
     pub fn write_var_in_block(&mut self, block: BlockId, var: VarId, val: ValueId) {
-        self.variables.entry(var).or_default().insert(block, val);
+        let list = self
+            .variables
+            .entry(var)
+            .or_default()
+            .entry(block)
+            .or_default();
+        if let Ty::Flags(_) = self.vars[var].ty {
+            list.push(val);
+        } else {
+            list.clear();
+            list.push(val);
+        }
+    }
+
+    pub fn get_var_in_block(&self, block: BlockId, var: VarId) -> Option<ValueId> {
+        // This is cursed, but I want an easy way to support flags as values,
+        // without adding separate Value for a flag
+        let list = self.variables.get(&var)?.get(&block)?;
+        if let Ty::Flags(flags) = self.vars[var].ty {
+            for candidate in list.iter().rev() {
+                let Value::Temp {
+                    ty: Ty::Flags(candidate_flags),
+                } = &self.func.values[*candidate]
+                else {
+                    panic!("value is no types")
+                };
+
+                if candidate_flags.contains(flags) {
+                    return Some(*candidate);
+                }
+                if candidate_flags.intersects(flags) {
+                    todo!("partial flag intersection")
+                }
+            }
+            None
+        } else {
+            list.first().copied()
+        }
     }
 
     pub fn read_var_in_block(&mut self, block: BlockId, var: VarId) -> ValueId {
-        if let Some(&v) = self.variables.entry(var).or_default().get(&block) {
+        if let Some(v) = self.get_var_in_block(block, var) {
             return v;
-        }
+        };
 
         let sealed = self.blocks.get(&block).is_some_and(|b| b.sealed);
 
