@@ -94,17 +94,22 @@ fn main() {
         obj::fill_database_with_import(&mut db, lib);
     }
 
-    let blocks = third_cfg::walk_code_blocks(binary.sections.text, binary.entry_point);
+    let mut cfg_db = third_cfg::CfgDb::new(binary.entry_point);
 
-    let functions = third_cfg::derive_functions(&blocks, binary.entry_point);
-    let mut ssa_functions = Vec::with_capacity(functions.len());
+    let blocks = third_cfg::walk_code_blocks(&cfg_db, binary.sections.text);
+    cfg_db.set_blocks(blocks);
 
-    for func in functions.iter() {
+    let functions = third_cfg::derive_functions(&cfg_db);
+    cfg_db.set_functions(functions);
+
+    let mut ssa_functions = Vec::with_capacity(cfg_db.functions().len());
+
+    for func in cfg_db.functions().iter() {
         println!(
             "------------------------------ SSA {} ------------------------------",
             func.addr()
         );
-        let mut ssa_func = lir::flat::func_from_flat(func, &blocks);
+        let mut ssa_func = lir::flat::func_from_flat(func, cfg_db.blocks());
         lir::analysis::optimise(&mut ssa_func, binary.sections.rdata);
 
         println!("{}", ssa_func.fmt());
@@ -126,15 +131,15 @@ fn main() {
 
     lir::analysis::collect_allocations::run(&ssa_functions);
 
-    println!(".funcs: # Detected {} functions", functions.len());
-    for func in functions {
+    println!(".funcs: # Detected {} functions", cfg_db.functions().len());
+    for func in cfg_db.functions() {
         println!(
             "------------------------------ func_{} ------------------------------",
             func.addr()
         );
 
         for block in func.blocks().iter() {
-            let block = blocks.get(block).unwrap();
+            let block = cfg_db.blocks().get(block).unwrap();
             let code = binary.sections.text.slice(block.addr(), block.len());
 
             println!("_block_{}:", block.addr());
@@ -145,7 +150,7 @@ fn main() {
     println!(".text:");
 
     let mut printer = PrinterOfSkipped::new(binary.sections.text);
-    for block in blocks.values() {
+    for block in cfg_db.blocks().values() {
         printer.print_skipped(block.addr());
 
         if block.addr() == binary.entry_point {

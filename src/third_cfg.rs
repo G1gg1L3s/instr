@@ -6,9 +6,43 @@ use crate::{
     flat_ir::{self, Block, Imm, Value},
 };
 
-pub fn walk_code_blocks(text: SectionData<'_>, start: Addr) -> BTreeMap<Addr, Block> {
-    let mut to_visit = vec![start];
-    let mut block_starts = BTreeSet::from([start]);
+pub struct CfgDb {
+    entry: Addr,
+    block_starts: BTreeSet<Addr>,
+    blocks: BTreeMap<Addr, Block>,
+    functions: Vec<Function>,
+}
+
+impl CfgDb {
+    pub fn new(entry: Addr) -> Self {
+        Self {
+            entry,
+            block_starts: BTreeSet::from_iter([entry]),
+            blocks: Default::default(),
+            functions: Default::default(),
+        }
+    }
+
+    pub fn set_blocks(&mut self, blocks: BTreeMap<Addr, Block>) {
+        self.blocks = blocks;
+    }
+
+    pub fn blocks(&self) -> &BTreeMap<Addr, Block> {
+        &self.blocks
+    }
+
+    pub fn set_functions(&mut self, functions: Vec<Function>) {
+        self.functions = functions;
+    }
+
+    pub fn functions(&self) -> &[Function] {
+        &self.functions
+    }
+}
+
+pub fn walk_code_blocks(db: &CfgDb, text: SectionData<'_>) -> BTreeMap<Addr, Block> {
+    let mut to_visit = db.block_starts.iter().copied().collect::<Vec<_>>();
+    let mut block_starts = db.block_starts.clone();
 
     let mut blocks = BTreeMap::<Addr, Block>::new();
 
@@ -92,13 +126,13 @@ impl Function {
     }
 }
 
-pub fn derive_functions(blocks: &BTreeMap<Addr, Block>, entry: Addr) -> Vec<Function> {
-    let mut entries = collect_entries(blocks.values());
-    entries.insert(entry);
+pub fn derive_functions(db: &CfgDb) -> Vec<Function> {
+    let mut entries = collect_entries(db.blocks.values());
+    entries.insert(db.entry);
 
     let mut funcs = Vec::with_capacity(entries.len());
     for addr in &entries {
-        let func = derive_func(blocks, &entries, *addr);
+        let func = derive_func(&db.blocks, &entries, *addr);
         funcs.push(func);
     }
 
