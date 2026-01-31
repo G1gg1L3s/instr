@@ -296,7 +296,16 @@ impl<'a> BlockState<'a> {
 
                 self.ins().extract_flag(flags_val, ssa_flag)
             }
-            flat_ir::Value::X87StatusWord => self.ins().unimplemented(),
+            flat_ir::Value::X87StatusWord => {
+                let flags = self.get_var(FlatVar::Flags);
+                let flags_val = self.state.builder.read_var(flags);
+                let ty = self.state.builder.func.val_ty(flags_val);
+                let Some(Ty::Flags(_)) = ty else {
+                    log::warn!("invalid value {flags_val}: expected flags, found: {ty:?}");
+                    return self.ins().unimplemented();
+                };
+                self.ins().x87status_word(flags_val)
+            }
         }
     }
 
@@ -372,6 +381,7 @@ impl<'a> BlockState<'a> {
         let ty = self.state.builder.func.val_ty(flags_val);
         let Some(Ty::Flags(flags)) = ty else {
             log::warn!("invalid value {flags_val}: expected flags, found: {ty:?}");
+            // TODO: return Invalid
             return self.ins().unimplemented();
         };
 

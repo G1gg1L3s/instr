@@ -255,6 +255,12 @@ impl<'a> Display for InsFmt<'a> {
                 self.fmt.val(*dst),
                 self.fmt.val(*stack),
             ),
+            InsKind::X87StatusWord { dst, flags } => write!(
+                f,
+                "{} = x87.status_word {}",
+                self.fmt.val(*dst),
+                self.fmt.val(*flags)
+            ),
         }
     }
 }

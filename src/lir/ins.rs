@@ -265,6 +265,11 @@ pub enum InsKind {
         stack: ValueId,
         idx: u8,
     },
+
+    X87StatusWord {
+        dst: ValueId,
+        flags: ValueId,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -442,6 +447,10 @@ impl Ins {
                 callback(dst);
                 callback(stack);
             }
+            InsKind::X87StatusWord { dst, flags } => {
+                callback(dst);
+                callback(flags);
+            }
         }
     }
 
@@ -578,6 +587,7 @@ impl Ins {
             } => {
                 callback(*stack);
             }
+            InsKind::X87StatusWord { dst: _, flags } => callback(*flags),
         }
     }
 
@@ -603,6 +613,7 @@ impl Ins {
             InsKind::X87Push { .. } => true,
             InsKind::X87Pop { .. } => true,
             InsKind::X87Peek { .. } => true,
+            InsKind::X87StatusWord { .. } => false,
         }
     }
 
@@ -674,6 +685,7 @@ impl Ins {
             } => {
                 callback(*dst);
             }
+            InsKind::X87StatusWord { dst, flags: _ } => callback(*dst),
         }
     }
 
@@ -789,7 +801,8 @@ impl std::fmt::Display for Ins {
                 MaybeValueFmt(*dst_flags),
                 MaybeValueFmt(*dst)
             ),
-            InsKind::X87Peek { dst, stack, idx } => write!(f, "{dst} = x87.peek {stack}[{idx}]",),
+            InsKind::X87Peek { dst, stack, idx } => write!(f, "{dst} = x87.peek {stack}[{idx}]"),
+            InsKind::X87StatusWord { dst, flags } => write!(f, "{dst} = x87.status_word {flags}"),
         }
     }
 }

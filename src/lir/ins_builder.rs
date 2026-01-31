@@ -303,6 +303,12 @@ impl<'a> InsBuilder<'a> {
         self.emit(InsKind::X87Peek { dst, stack, idx });
         dst
     }
+
+    pub fn x87status_word(&mut self, flags: ValueId) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty: Ty::U16 });
+        self.emit(InsKind::X87StatusWord { dst, flags });
+        dst
+    }
 }
 
 pub enum Discard {
