@@ -503,6 +503,8 @@ pub enum Instr {
         count: Value,
         size: Size,
     },
+
+    Unknown(iced_x86::Instruction),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -608,6 +610,7 @@ impl<'a> std::fmt::Display for InstrPrinter<'a> {
                 count,
                 size,
             } => write!(f, "__memcpy_{size}({dst_addr}, {src_addr}, {count})"),
+            Instr::Unknown(i) => write!(f, "unknown ({i})"),
         }
     }
 }
@@ -1467,9 +1470,16 @@ fn lower_fxch(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 }
 
 fn lower_fcom(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let rhs = lower_operand(ctx, ins, 0).lower_load(ctx);
-    let rhs = emit_convert(ctx, rhs, Size::F64);
-    let lhs = Value::Reg(Reg::St(0));
+    let (lhs, rhs) = match ins.op_count() {
+        0 => (Value::Reg(Reg::St(0)), Value::Reg(Reg::St(1))),
+        1 => {
+            let rhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+            let rhs = emit_convert(ctx, rhs, Size::F64);
+            let lhs = Value::Reg(Reg::St(0));
+            (lhs, rhs)
+        }
+        x => todo!("{x} operands"),
+    };
 
     emit_bin_with_flags(ctx, BinOp::Sub, lhs, rhs, FlagxGroup::X87_COM);
 
@@ -2324,6 +2334,9 @@ fn lower_ins(
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
 
         Mnemonic::Nop => ctx.emit(Instr::Nop),
+
+        #[cfg(feature = "unknown-ins")]
+        _ => ctx.emit(Instr::Unknown(*ins)),
 
         _ => {
             eprintln!("{}", ctx);

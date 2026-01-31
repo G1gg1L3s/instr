@@ -95,6 +95,8 @@ fn main() {
     }
 
     let mut cfg_db = third_cfg::CfgDb::new(binary.entry_point);
+    cfg_db.insert_func_addr(Addr(0x420f50));
+
     let mut ssa_functions = vec![];
 
     loop {

@@ -211,6 +211,9 @@ pub fn func_from_flat(
 
                 flat_ir::Instr::X87Push { src, flags } => block_state.lower_x87push(src, flags),
                 flat_ir::Instr::X87Pop { dst, flags } => block_state.lower_x87pop(dst, flags),
+                flat_ir::Instr::Unknown(_) => {
+                    block_state.ins().unimplemented();
+                }
             }
         }
 

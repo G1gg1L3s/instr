@@ -9,6 +9,7 @@ use crate::{
 pub struct CfgDb {
     entry: Addr,
     block_starts: BTreeSet<Addr>,
+    function_starts: BTreeSet<Addr>,
     blocks: BTreeMap<Addr, Block>,
     functions: Vec<Function>,
     jump_tables: HashMap<Addr, JumpTable>,
@@ -19,6 +20,7 @@ impl CfgDb {
         Self {
             entry,
             block_starts: BTreeSet::from_iter([entry]),
+            function_starts: BTreeSet::from_iter([entry]),
             blocks: Default::default(),
             functions: Default::default(),
             jump_tables: Default::default(),
@@ -27,6 +29,11 @@ impl CfgDb {
 
     pub fn set_blocks(&mut self, blocks: BTreeMap<Addr, Block>) {
         self.blocks = blocks;
+    }
+
+    pub fn insert_func_addr(&mut self, addr: Addr) {
+        self.block_starts.insert(addr);
+        self.function_starts.insert(addr);
     }
 
     pub fn blocks(&self) -> &BTreeMap<Addr, Block> {
@@ -144,7 +151,7 @@ impl Function {
 
 pub fn derive_functions(db: &CfgDb) -> Vec<Function> {
     let mut entries = collect_entries(db.blocks.values());
-    entries.insert(db.entry);
+    entries.extend(&db.function_starts);
 
     let mut funcs = Vec::with_capacity(entries.len());
     for addr in &entries {

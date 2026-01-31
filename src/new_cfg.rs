@@ -428,9 +428,10 @@ fn next_addrs(db: &ObjDatabase, blocks: &BTreeMap<Addr, &Block>, block: &CodeBlo
         }
         Instruction::Jump(Op::Mem(mem)) => {
             if looks_like_jump_table(&mem)
-                && let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp)) {
-                    successors.extend(jt.entries.iter().map(|entry| entry.target));
-                }
+                && let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp))
+            {
+                successors.extend(jt.entries.iter().map(|entry| entry.target));
+            }
         }
         Instruction::JumpConditional(Op::Addr(addr), _) => {
             successors.push(addr);
@@ -438,9 +439,10 @@ fn next_addrs(db: &ObjDatabase, blocks: &BTreeMap<Addr, &Block>, block: &CodeBlo
         }
         Instruction::JumpConditional(Op::Mem(mem), _) => {
             if looks_like_jump_table(&mem)
-                && let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp)) {
-                    successors.extend(jt.entries.iter().map(|entry| entry.target));
-                }
+                && let Some(Block::JumpTable(jt)) = blocks.get(&Addr(mem.disp))
+            {
+                successors.extend(jt.entries.iter().map(|entry| entry.target));
+            }
             successors.push(block.end());
         }
         Instruction::Loop(addr) => {
@@ -509,9 +511,10 @@ fn assign_block_to_func(
         }
 
         if let Some(Block::Code(code)) = blocks.get(&func_addr)
-            && code.typ != CodeBlockTyp::Entry {
-                identified_funcs.insert(FuncAddr(func_addr));
-            }
+            && code.typ != CodeBlockTyp::Entry
+        {
+            identified_funcs.insert(FuncAddr(func_addr));
+        }
 
         to_visit.clear();
         to_visit.push(func_addr);
