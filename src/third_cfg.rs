@@ -97,6 +97,14 @@ pub fn walk_code_blocks(db: &CfgDb, text: SectionData<'_>) -> BTreeMap<Addr, Blo
                 to_visit.push(*next);
                 block_starts.insert(*next);
             }
+            flat_ir::Terminator::JumpTable {
+                addr: _,
+                jump_addr: _,
+                entries,
+            } => {
+                to_visit.extend(entries);
+                block_starts.extend(entries);
+            }
         }
 
         for ins in block.instr() {
@@ -184,6 +192,13 @@ fn derive_func(blocks: &BTreeMap<Addr, Block>, entries: &HashSet<Addr>, start: A
             flat_ir::Terminator::Ret { .. } => {}
             flat_ir::Terminator::Fallthrough { next } => {
                 worklist.push(*next);
+            }
+            flat_ir::Terminator::JumpTable {
+                addr: _,
+                jump_addr: _,
+                entries,
+            } => {
+                worklist.extend(entries);
             }
         }
     }

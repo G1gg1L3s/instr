@@ -5,8 +5,8 @@ use crate::{
         flags::{Flag, FlagsGroup},
         func::SsaFunction,
         ins::{
-            BinOp, CallTarget, Condition, Ins, InsKind, JumpTarget, MemSpace, RawSize, Terminator,
-            TerminatorKind, UnOp,
+            BinOp, CallTarget, Condition, Ins, InsKind, JumpTableEntry, JumpTarget, MemSpace,
+            RawSize, Terminator, TerminatorKind, UnOp,
         },
         io::{Io, IoValues},
         ty::Ty,
@@ -108,6 +108,14 @@ impl<'a> InsBuilder<'a> {
                 }
             }
             TerminatorKind::Ret { .. } => {}
+            TerminatorKind::JumpTable {
+                jump_addr: _,
+                entries,
+            } => {
+                for entry in entries {
+                    self.func.blocks[entry.target].predecessors.push(self.block);
+                }
+            }
         }
 
         self.func.blocks[self.block].terminator = Some(Terminator {
@@ -125,6 +133,10 @@ impl<'a> InsBuilder<'a> {
 
     pub fn ret(&mut self, adjust: u16, args: IoValues) {
         self.terminator(TerminatorKind::Ret { adjust, args });
+    }
+
+    pub fn jump_table(&mut self, jump_addr: ValueId, entries: Vec<JumpTableEntry>) {
+        self.terminator(TerminatorKind::JumpTable { jump_addr, entries });
     }
 
     pub fn call(&mut self, target: CallTarget, args: IoValues, return_types: &[Io]) -> IoValues {

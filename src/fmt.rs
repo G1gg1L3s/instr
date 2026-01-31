@@ -11,3 +11,16 @@ where
         }
     }
 }
+pub struct AsList<'a, T>(pub &'a [T]);
+
+impl<'a, T: std::fmt::Display> std::fmt::Display for AsList<'a, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        let mut comma = "";
+        for a in self.0 {
+            write!(f, "{comma}{a}")?;
+            comma = ", ";
+        }
+        write!(f, "]")
+    }
+}

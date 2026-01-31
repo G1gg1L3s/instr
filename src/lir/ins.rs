@@ -851,6 +851,22 @@ pub enum TerminatorKind {
         adjust: u16,
         args: IoValues,
     },
+    JumpTable {
+        jump_addr: ValueId,
+        entries: Vec<JumpTableEntry>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct JumpTableEntry {
+    pub target: BlockId,
+    pub args: Vec<ValueId>,
+}
+
+impl std::fmt::Display for JumpTableEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.target, FmtList(&self.args))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -868,6 +884,9 @@ impl std::fmt::Display for TerminatorKind {
             }
             Self::Ret { adjust, args } => {
                 write!(f, "ret stack:{} ({})", adjust, args)
+            }
+            Self::JumpTable { jump_addr, entries } => {
+                write!(f, "jumptable {jump_addr} {}", FmtList(entries))
             }
         }
     }
@@ -917,6 +936,13 @@ impl Terminator {
             TerminatorKind::Ret { adjust: _, args } => {
                 args.values().for_each(callback);
             }
+            TerminatorKind::JumpTable { jump_addr, entries } => {
+                callback(*jump_addr);
+                entries
+                    .iter()
+                    .flat_map(|e| &e.args)
+                    .for_each(|v| callback(*v));
+            }
         }
     }
 
@@ -932,6 +958,13 @@ impl Terminator {
             }
             TerminatorKind::Ret { adjust: _, args } => {
                 args.values_mut().map(callback).count();
+            }
+            TerminatorKind::JumpTable { jump_addr, entries } => {
+                callback(jump_addr);
+                entries
+                    .iter_mut()
+                    .flat_map(|e| &mut e.args)
+                    .for_each(|v| callback(v));
             }
         }
     }
@@ -955,6 +988,14 @@ impl Terminator {
                 }
             }
             TerminatorKind::Ret { .. } => {}
+            TerminatorKind::JumpTable {
+                jump_addr: _,
+                entries,
+            } => {
+                entries
+                    .iter_mut()
+                    .for_each(|e| callback(e.target, &mut e.args));
+            }
         }
     }
 
@@ -977,6 +1018,12 @@ impl Terminator {
                 }
             }
             TerminatorKind::Ret { .. } => {}
+            TerminatorKind::JumpTable {
+                jump_addr: _,
+                entries,
+            } => {
+                entries.iter().for_each(|e| callback(e.target, &e.args));
+            }
         }
     }
 }

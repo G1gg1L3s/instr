@@ -48,6 +48,7 @@ pub fn run(func: &mut SsaFunction) {
                 promote_jump_target(func.addr, terminator.addr, elseb, &func.values);
             }
             TerminatorKind::Ret { .. } => {}
+            TerminatorKind::JumpTable { .. } => {}
         }
     }
 }

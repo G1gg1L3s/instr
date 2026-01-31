@@ -1,6 +1,6 @@
 use iced_x86::{Mnemonic, OpKind};
 
-use crate::addr::Addr;
+use crate::{addr::Addr, fmt::AsList};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Reg {
@@ -1518,6 +1518,11 @@ pub enum Terminator {
     Fallthrough {
         next: Addr,
     },
+    JumpTable {
+        addr: Addr,
+        jump_addr: Value,
+        entries: Vec<Addr>,
+    },
 }
 
 impl std::fmt::Display for Terminator {
@@ -1532,6 +1537,11 @@ impl std::fmt::Display for Terminator {
             Self::Jump { target, .. } => write!(f, "jump {target}"),
             Self::Ret { stack_adjust, .. } => write!(f, "ret {stack_adjust}"),
             Self::Fallthrough { next, .. } => write!(f, "fallthrough {next}"),
+            Self::JumpTable {
+                addr: _,
+                jump_addr,
+                entries,
+            } => write!(f, "jumptable {jump_addr} {}", AsList(entries)),
         }
     }
 }
@@ -1543,6 +1553,7 @@ impl Terminator {
             | Terminator::Jump { addr, .. }
             | Terminator::Ret { addr, .. } => Some(*addr),
             Terminator::Fallthrough { .. } => None,
+            Terminator::JumpTable { addr, .. } => Some(*addr),
         }
     }
 }

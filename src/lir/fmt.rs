@@ -472,6 +472,18 @@ fn fmt_terminator(
                 write!(f, "ret stack:{} ({})", adjust, fmt.io_vals(args))
             }
         }
+        TerminatorKind::JumpTable { jump_addr, entries } => {
+            writeln!(f, "jumptable {}:", fmt.val(*jump_addr))?;
+            for (i, entry) in entries.iter().enumerate() {
+                writeln!(
+                    f,
+                    "            {i} -> {}{}",
+                    entry.target,
+                    fmt.vals(&entry.args)
+                )?;
+            }
+            Ok(())
+        }
     }
 }
 

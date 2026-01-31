@@ -7,7 +7,7 @@ use crate::{
         block::BlockId,
         flags::{Flag, Flags, FlagsGroup},
         func::SsaFunction,
-        ins::{BinOp, CallTarget, Condition, JumpTarget, MemSpace, RawSize},
+        ins::{BinOp, CallTarget, Condition, JumpTableEntry, JumpTarget, MemSpace, RawSize},
         ins_builder::Discard,
         io::Io,
         ssa_builder::{SsaBuilder, VarId},
@@ -445,6 +445,23 @@ impl<'a> BlockState<'a> {
                     block,
                     args: vec![],
                 });
+            }
+            flat_ir::Terminator::JumpTable {
+                addr: _,
+                jump_addr,
+                entries,
+            } => {
+                let jump_addr = self.lower_val(*jump_addr);
+
+                let mut ssa_entries = vec![];
+                for entry in entries {
+                    let target = self.state.blocks[entry];
+                    ssa_entries.push(JumpTableEntry {
+                        target,
+                        args: vec![],
+                    })
+                }
+                self.ins().jump_table(jump_addr, ssa_entries);
             }
         }
     }
