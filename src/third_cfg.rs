@@ -44,6 +44,10 @@ impl CfgDb {
     pub fn set_jump_tables(&mut self, jump_tables: impl IntoIterator<Item = JumpTable>) {
         self.jump_tables = jump_tables.into_iter().map(|t| (t.ins_addr, t)).collect();
     }
+
+    pub fn get_jump_table(&self, instruction_addr: Addr) -> Option<&JumpTable> {
+        self.jump_tables.get(&instruction_addr)
+    }
 }
 
 pub fn walk_code_blocks(db: &CfgDb, text: SectionData<'_>) -> BTreeMap<Addr, Block> {
@@ -71,7 +75,7 @@ pub fn walk_code_blocks(db: &CfgDb, text: SectionData<'_>) -> BTreeMap<Addr, Blo
             text.slice_to_end(addr)
         };
 
-        let block = flat_ir::lower_block(code, addr);
+        let block = flat_ir::lower_block(db, code, addr);
 
         match block.terminator() {
             flat_ir::Terminator::Cond {

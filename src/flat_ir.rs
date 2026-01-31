@@ -1,6 +1,6 @@
 use iced_x86::{Mnemonic, OpKind};
 
-use crate::{addr::Addr, fmt::AsList};
+use crate::{addr::Addr, fmt::AsList, third_cfg::CfgDb};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Reg {
@@ -1603,13 +1603,23 @@ fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     }
 }
 
-fn lower_jmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
+fn lower_jmp(cfg_db: &CfgDb, ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     detect_log_jump_table(ins);
+    let ins_addr = Addr(ins.ip32());
 
     let target = lower_operand(ctx, ins, 0).lower_load(ctx);
-    Terminator::Jump {
-        target,
-        addr: Addr(ins.ip32()),
+
+    if let Some(jump_table) = cfg_db.get_jump_table(ins_addr) {
+        Terminator::JumpTable {
+            addr: ins_addr,
+            jump_addr: target,
+            entries: jump_table.entries.clone(),
+        }
+    } else {
+        Terminator::Jump {
+            target,
+            addr: ins_addr,
+        }
     }
 }
 
@@ -2233,7 +2243,11 @@ impl<'a> std::fmt::Display for AsmBlockFmt<'a> {
     }
 }
 
-fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminator> {
+fn lower_ins(
+    cfg_db: &CfgDb,
+    ctx: &mut LowerCtx,
+    ins: &iced_x86::Instruction,
+) -> Option<Terminator> {
     ctx.set_addr(Addr(ins.ip32()));
     match ins.mnemonic() {
         Mnemonic::Push => lower_push(ctx, ins),
@@ -2262,7 +2276,7 @@ fn lower_ins(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Option<Terminat
         | Mnemonic::Jnp //  pf = 0
             => return Some(lower_jmp_x(ctx, ins)),
 
-        Mnemonic::Jmp => return Some(lower_jmp(ctx, ins)),
+        Mnemonic::Jmp => return Some(lower_jmp(cfg_db, ctx, ins)),
 
         Mnemonic::Add => lower_bin_set_flags(ctx, ins, BinOp::Add),
         Mnemonic::Sub => lower_bin_set_flags(ctx, ins, BinOp::Sub),
@@ -2332,7 +2346,7 @@ fn lower_ret(_ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
     }
 }
 
-pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
+pub fn lower_block(cfg_db: &CfgDb, code: &[u8], block_addr: Addr) -> Block {
     let mut ctx = LowerCtx::new();
     let mut decoder = iced_x86::Decoder::with_ip(
         32,
@@ -2342,7 +2356,7 @@ pub fn lower_block(code: &[u8], block_addr: Addr) -> Block {
     );
 
     for ins in &mut decoder {
-        if let Some(terminator) = lower_ins(&mut ctx, &ins) {
+        if let Some(terminator) = lower_ins(cfg_db, &mut ctx, &ins) {
             let size: u32 = ins.next_ip32().checked_sub(block_addr.0).unwrap();
 
             return Block {

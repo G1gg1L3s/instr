@@ -475,12 +475,15 @@ fn fmt_terminator(
         TerminatorKind::JumpTable { jump_addr, entries } => {
             writeln!(f, "jumptable {}:", fmt.val(*jump_addr))?;
             for (i, entry) in entries.iter().enumerate() {
-                writeln!(
+                write!(
                     f,
-                    "            {i} -> {}{}",
+                    "                   {i} -> {}{}",
                     entry.target,
                     fmt.vals(&entry.args)
                 )?;
+                if i != entries.len() - 1 {
+                    writeln!(f)?;
+                }
             }
             Ok(())
         }

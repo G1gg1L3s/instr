@@ -98,6 +98,7 @@ fn main() {
     let mut ssa_functions = vec![];
 
     loop {
+        log::trace!("> Walking code blocks...");
         let blocks = third_cfg::walk_code_blocks(&cfg_db, binary.sections.text);
         cfg_db.set_blocks(blocks);
 
@@ -136,6 +137,7 @@ fn main() {
         }
 
         let all_jump_tables_len = all_jump_tables.len();
+        log::trace!("> Derived {all_jump_tables_len} jump tables");
         cfg_db.set_jump_tables(all_jump_tables);
         if all_jump_tables_len == 0 {
             break;
