@@ -112,8 +112,6 @@ pub fn walk_code_blocks(db: &CfgDb, text: SectionData<'_>) -> BTreeMap<Addr, Blo
 pub struct Function {
     addr: Addr,
     blocks: Vec<Addr>,
-    #[allow(unused)]
-    exits: Vec<Addr>,
 }
 
 impl Function {
@@ -143,7 +141,6 @@ pub fn derive_functions(db: &CfgDb) -> Vec<Function> {
 
 fn derive_func(blocks: &BTreeMap<Addr, Block>, entries: &HashSet<Addr>, start: Addr) -> Function {
     let mut func_blocks = BTreeSet::new();
-    let mut exits = BTreeSet::new();
 
     let mut worklist = vec![start];
     let mut visited = HashSet::new();
@@ -178,9 +175,7 @@ fn derive_func(blocks: &BTreeMap<Addr, Block>, entries: &HashSet<Addr>, start: A
                     worklist.push(Addr(*u32));
                 }
             }
-            flat_ir::Terminator::Ret { .. } => {
-                exits.insert(block.addr());
-            }
+            flat_ir::Terminator::Ret { .. } => {}
             flat_ir::Terminator::Fallthrough { next } => {
                 worklist.push(*next);
             }
@@ -190,7 +185,6 @@ fn derive_func(blocks: &BTreeMap<Addr, Block>, entries: &HashSet<Addr>, start: A
     Function {
         addr: start,
         blocks: func_blocks.into_iter().collect(),
-        exits: exits.into_iter().collect(),
     }
 }
 
