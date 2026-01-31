@@ -43,6 +43,11 @@ pub struct ValueFmt<'a> {
     val: ValueId,
 }
 
+pub struct MaybeValueFmt<'a> {
+    fmt: FuncFmt<'a>,
+    val: Option<ValueId>,
+}
+
 pub struct ValuesFmt<'a> {
     fmt: FuncFmt<'a>,
     vals: &'a [ValueId],
@@ -141,41 +146,32 @@ impl<'a> Display for InsFmt<'a> {
                 FormatCallTarget(self.fmt, target),
                 self.fmt.io_vals(args)
             ),
-            InsKind::Extract { dst, src, offset } => match self.fmt.func.val_ty(*dst) {
-                Some(ty) => write!(
+            InsKind::Extract { dst, src, offset } => {
+                let ty = self.fmt.func.val_ty(*dst);
+                write!(
                     f,
-                    "{} = extract.{ty} {}[{offset}..]",
+                    "{} = extract.{} {}[{offset}..]",
                     self.fmt.val(*dst),
+                    MaybeTy(ty),
                     self.fmt.val(*src)
-                ),
-                None => write!(
-                    f,
-                    "{} = extract.??? {}[{offset}..]",
-                    self.fmt.val(*dst),
-                    self.fmt.val(*src)
-                ),
-            },
+                )
+            }
             InsKind::Insert {
                 dst,
                 base,
                 value,
                 offset,
-            } => match self.fmt.func.val_ty(*value) {
-                Some(ty) => write!(
+            } => {
+                let ty = self.fmt.func.val_ty(*value);
+                write!(
                     f,
-                    "{} = insert.{ty} {}[{offset}..] <- {}",
+                    "{} = insert.{} {}[{offset}..] <- {}",
                     self.fmt.val(*dst),
+                    MaybeTy(ty),
                     self.fmt.val(*base),
                     self.fmt.val(*value)
-                ),
-                None => write!(
-                    f,
-                    "{} = insert.??? {}[{offset}..] <- {}",
-                    self.fmt.val(*dst),
-                    self.fmt.val(*base),
-                    self.fmt.val(*value)
-                ),
-            },
+                )
+            }
             InsKind::Cast { dst, src } => {
                 write!(
                     f,
@@ -230,33 +226,29 @@ impl<'a> Display for InsFmt<'a> {
             InsKind::X87Push {
                 dst_stack,
                 src_stack,
+                dst_flags,
                 value,
             } => write!(
                 f,
-                "{} = x87.push {} {}",
+                "{}, {} = x87.push {} {}",
                 self.fmt.val(*dst_stack),
+                self.fmt.maybe_val(*dst_flags),
                 self.fmt.val(*src_stack),
                 self.fmt.val(*value)
             ),
             InsKind::X87Pop {
                 dst_stack,
-                src_stack,
+                dst_flags,
                 dst,
-            } => match dst {
-                Some(dst) => write!(
-                    f,
-                    "{}, {} = x87.pop {}",
-                    self.fmt.val(*dst_stack),
-                    self.fmt.val(*dst),
-                    self.fmt.val(*src_stack),
-                ),
-                None => write!(
-                    f,
-                    "{}, _ = x87.pop {}",
-                    self.fmt.val(*dst_stack),
-                    self.fmt.val(*src_stack),
-                ),
-            },
+                src_stack,
+            } => write!(
+                f,
+                "{}, {}, {} = x87.pop {}",
+                self.fmt.val(*dst_stack),
+                self.fmt.maybe_val(*dst_flags),
+                self.fmt.maybe_val(*dst),
+                self.fmt.val(*src_stack),
+            ),
             InsKind::X87Peek { dst, stack, idx } => write!(
                 f,
                 "{} = x87.peek {}[{idx}]",
@@ -284,12 +276,22 @@ impl<'a> Display for ValueFmt<'a> {
         match val {
             Value::Invalid => write!(f, "invalid{}", self.val.id()),
             Value::Todo => write!(f, "todo{}", self.val.id()),
+            Value::Temp { ty: Ty::X87Stack } => write!(f, "x87stack#{}", self.val.id()),
             Value::Temp {
                 ty: Ty::Flags(flags),
             } => write!(f, "{}#{}", FlagsGroup::new(*flags), self.val.id()),
             Value::Temp { ty: Ty::Mem } => write!(f, "mem{}", self.val.id()),
             Value::Temp { .. } | Value::Alias { .. } => write!(f, "{}", self.val),
             Value::Imm(x) => write!(f, "{x}"),
+        }
+    }
+}
+
+impl<'a> Display for MaybeValueFmt<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.val {
+            Some(x) => write!(f, "{}", self.fmt.val(x)),
+            None => write!(f, "_"),
         }
     }
 }
@@ -342,6 +344,13 @@ impl<'a> FuncFmt<'a> {
 
     pub fn val(self, val: ValueId) -> ValueFmt<'a> {
         ValueFmt { fmt: self, val }
+    }
+
+    pub fn maybe_val(self, val: impl Into<Option<ValueId>>) -> MaybeValueFmt<'a> {
+        MaybeValueFmt {
+            fmt: self,
+            val: val.into(),
+        }
     }
 
     pub fn vals(self, vals: &'a [ValueId]) -> ValuesFmt<'a> {

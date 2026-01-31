@@ -8,6 +8,7 @@ use crate::{
         flags::{Flag, Flags, FlagsGroup},
         func::SsaFunction,
         ins::{BinOp, CallTarget, Condition, JumpTarget, MemSpace, RawSize},
+        ins_builder::Discard,
         io::Io,
         ssa_builder::{SsaBuilder, VarId},
         ty::Ty,
@@ -208,9 +209,9 @@ pub fn func_from_flat(
                     count,
                     size,
                 } => block_state.lower_memcpy(dst_addr, src_addr, count, size),
-                _ => {
-                    block_state.state.builder.ins().unimplemented();
-                }
+
+                flat_ir::Instr::X87Push { src, flags } => block_state.lower_x87push(src, flags),
+                flat_ir::Instr::X87Pop { dst, flags } => block_state.lower_x87pop(dst, flags),
             }
         }
 
@@ -256,6 +257,12 @@ impl<'a> BlockState<'a> {
 
     pub fn lower_val(&mut self, val: flat_ir::Value) -> ValueId {
         match val {
+            flat_ir::Value::Reg(flat_ir::Reg::St(idx)) => {
+                let stack = self.get_var(FlatVar::X87Stack);
+                let stack = self.state.builder.read_var(stack);
+                self.ins().x87peek(stack, idx)
+            }
+
             flat_ir::Value::Reg(reg) => {
                 let var = self.get_var(FlatVar::Reg(reg));
                 self.state.builder.read_var(var)
@@ -369,11 +376,12 @@ impl<'a> BlockState<'a> {
         };
 
         if !flags.contains(required) {
-            panic!(
-                "required flags: {:?}, but only provided: {:?}",
-                required,
-                FlagsGroup::new(flags)
-            );
+            // TODO: somehow reference the correct flags
+            // panic!(
+            //     "required flags: {:?}, but only provided: {:?}",
+            //     required,
+            //     FlagsGroup::new(flags)
+            // );
         }
 
         let cond = cond_to_ssa(cond);
@@ -587,6 +595,52 @@ impl<'a> BlockState<'a> {
 
         let mem = self.ins().memcpy(mem, dst_addr, src_addr, count, size);
         self.state.builder.write_var(mem_var, mem);
+    }
+
+    fn lower_x87push(&mut self, val: flat_ir::Value, group: flat_ir::FlagxGroup) {
+        let stack_var = self.get_var(FlatVar::X87Stack);
+        let stack = self.state.builder.read_var(stack_var);
+        let flags = if group.is_empty() {
+            None
+        } else {
+            Some(FlagsGroup::new(flags_to_ssa(group.flags())))
+        };
+
+        let val = self.lower_val(val);
+        let (res_stack, res_flags) = self.ins().x87push(stack, val, flags);
+
+        self.state.builder.write_var(stack_var, res_stack);
+        if let Some(flags) = res_flags {
+            let var = self.get_var(FlatVar::Flags);
+            self.state.builder.write_var(var, flags);
+        }
+    }
+
+    fn lower_x87pop(&mut self, dst: Option<flat_ir::Value>, group: flat_ir::FlagxGroup) {
+        let stack_var = self.get_var(FlatVar::X87Stack);
+        let stack = self.state.builder.read_var(stack_var);
+        let flags = if group.is_empty() {
+            None
+        } else {
+            Some(FlagsGroup::new(flags_to_ssa(group.flags())))
+        };
+
+        let discard = if dst.is_none() {
+            Discard::Yes
+        } else {
+            Discard::No
+        };
+        let (res_stack, res_flags, val) = self.ins().x87pop(stack, flags, discard);
+
+        self.state.builder.write_var(stack_var, res_stack);
+        if let Some(flags) = res_flags {
+            let var = self.get_var(FlatVar::Flags);
+            self.state.builder.write_var(var, flags);
+        }
+
+        if let Some((dst, val)) = dst.zip(val) {
+            self.lower_write_val(dst, val);
+        }
     }
 }
 

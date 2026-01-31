@@ -244,4 +244,68 @@ impl<'a> InsBuilder<'a> {
         });
         dst
     }
+
+    pub fn x87push(
+        &mut self,
+        stack: ValueId,
+        val: ValueId,
+        group: Option<FlagsGroup>,
+    ) -> (ValueId, Option<ValueId>) {
+        let dst_stack = self.func.values.add(Value::Temp { ty: Ty::X87Stack });
+
+        let dst_flags = group.map(|f| {
+            self.func.values.add(Value::Temp {
+                ty: Ty::Flags(f.flags()),
+            })
+        });
+
+        self.emit(InsKind::X87Push {
+            dst_stack,
+            dst_flags,
+            src_stack: stack,
+            value: val,
+        });
+
+        (dst_stack, dst_flags)
+    }
+
+    pub fn x87pop(
+        &mut self,
+        stack: ValueId,
+        group: Option<FlagsGroup>,
+        discard: Discard,
+    ) -> (ValueId, Option<ValueId>, Option<ValueId>) {
+        let dst_stack = self.func.values.add(Value::Temp { ty: Ty::X87Stack });
+
+        let dst_flags = group.map(|f| {
+            self.func.values.add(Value::Temp {
+                ty: Ty::Flags(f.flags()),
+            })
+        });
+        let dst = if let Discard::Yes = discard {
+            None
+        } else {
+            Some(self.func.values.add(Value::Temp { ty: Ty::F64 }))
+        };
+
+        self.emit(InsKind::X87Pop {
+            dst_stack,
+            dst_flags,
+            src_stack: stack,
+            dst,
+        });
+
+        (dst_stack, dst_flags, dst)
+    }
+
+    pub fn x87peek(&mut self, stack: ValueId, idx: u8) -> ValueId {
+        let dst = self.func.values.add(Value::Temp { ty: Ty::F64 });
+        self.emit(InsKind::X87Peek { dst, stack, idx });
+        dst
+    }
+}
+
+pub enum Discard {
+    Yes,
+    No,
 }

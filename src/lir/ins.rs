@@ -248,12 +248,14 @@ pub enum InsKind {
 
     X87Push {
         dst_stack: ValueId,
+        dst_flags: Option<ValueId>,
         src_stack: ValueId,
         value: ValueId,
     },
 
     X87Pop {
         dst_stack: ValueId,
+        dst_flags: Option<ValueId>,
         src_stack: ValueId,
         dst: Option<ValueId>,
     },
@@ -412,19 +414,27 @@ impl Ins {
             InsKind::X87InitStack { dst } => callback(dst),
             InsKind::X87Push {
                 dst_stack,
+                dst_flags,
                 src_stack,
                 value,
             } => {
                 callback(dst_stack);
+                if let Some(x) = dst_flags {
+                    callback(x);
+                }
                 callback(src_stack);
                 callback(value);
             }
             InsKind::X87Pop {
                 dst_stack,
+                dst_flags,
                 src_stack,
                 dst,
             } => {
                 callback(dst_stack);
+                if let Some(x) = dst_flags {
+                    callback(x);
+                }
                 callback(src_stack);
                 dst.into_iter().for_each(callback);
             }
@@ -546,6 +556,7 @@ impl Ins {
             InsKind::X87InitStack { dst: _ } => {}
             InsKind::X87Push {
                 dst_stack: _,
+                dst_flags: _,
                 src_stack,
                 value,
             } => {
@@ -554,6 +565,7 @@ impl Ins {
             }
             InsKind::X87Pop {
                 dst_stack: _,
+                dst_flags: _,
                 src_stack,
                 dst: _,
             } => {
@@ -632,15 +644,25 @@ impl Ins {
             InsKind::X87InitStack { dst } => callback(*dst),
             InsKind::X87Push {
                 dst_stack,
+                dst_flags,
                 src_stack: _,
                 value: _,
-            } => callback(*dst_stack),
+            } => {
+                if let Some(x) = dst_flags {
+                    callback(*x);
+                }
+                callback(*dst_stack)
+            }
             InsKind::X87Pop {
                 dst_stack,
+                dst_flags,
                 src_stack: _,
                 dst,
             } => {
                 callback(*dst_stack);
+                if let Some(x) = dst_flags {
+                    callback(*x);
+                }
                 if let Some(dst) = dst {
                     callback(*dst);
                 }
@@ -748,17 +770,25 @@ impl std::fmt::Display for Ins {
             InsKind::X87InitStack { dst } => write!(f, "{dst} = x87.init"),
             InsKind::X87Push {
                 dst_stack,
+                dst_flags,
                 src_stack,
                 value,
-            } => write!(f, "{dst_stack} = x87.push {src_stack} {value}",),
+            } => write!(
+                f,
+                "{dst_stack}, {} = x87.push {src_stack} {value}",
+                MaybeValueFmt(*dst_flags)
+            ),
             InsKind::X87Pop {
                 dst_stack,
+                dst_flags,
                 src_stack,
                 dst,
-            } => match dst {
-                Some(dst) => write!(f, "{dst_stack}, {dst} = x87.pop {src_stack}",),
-                None => write!(f, "{dst_stack}, _ = x87.pop {src_stack}",),
-            },
+            } => write!(
+                f,
+                "{dst_stack}, {}, {} = x87.pop {src_stack}",
+                MaybeValueFmt(*dst_flags),
+                MaybeValueFmt(*dst)
+            ),
             InsKind::X87Peek { dst, stack, idx } => write!(f, "{dst} = x87.peek {stack}[{idx}]",),
         }
     }
@@ -994,5 +1024,16 @@ impl std::fmt::Display for Condition {
             Condition::ParityOdd => "parity_odd",
         };
         write!(f, "{literal}")
+    }
+}
+
+struct MaybeValueFmt(Option<ValueId>);
+
+impl std::fmt::Display for MaybeValueFmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(x) => x.fmt(f),
+            None => write!(f, "_"),
+        }
     }
 }
