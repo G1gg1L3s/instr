@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::{
     SectionData,
@@ -11,6 +11,7 @@ pub struct CfgDb {
     block_starts: BTreeSet<Addr>,
     blocks: BTreeMap<Addr, Block>,
     functions: Vec<Function>,
+    jump_tables: HashMap<Addr, JumpTable>,
 }
 
 impl CfgDb {
@@ -20,6 +21,7 @@ impl CfgDb {
             block_starts: BTreeSet::from_iter([entry]),
             blocks: Default::default(),
             functions: Default::default(),
+            jump_tables: Default::default(),
         }
     }
 
@@ -37,6 +39,10 @@ impl CfgDb {
 
     pub fn functions(&self) -> &[Function] {
         &self.functions
+    }
+
+    pub fn set_jump_tables(&mut self, jump_tables: impl IntoIterator<Item = JumpTable>) {
+        self.jump_tables = jump_tables.into_iter().map(|t| (t.ins_addr, t)).collect();
     }
 }
 
@@ -203,4 +209,17 @@ fn collect_entries<'a>(blocks: impl Iterator<Item = &'a Block>) -> HashSet<Addr>
     }
 
     set
+}
+
+#[derive(Debug, Clone)]
+pub struct JumpTable {
+    pub ins_addr: Addr,
+    pub entries: Vec<Addr>,
+    pub size: Option<u32>,
+}
+
+impl JumpTable {
+    pub fn addr(&self) -> Addr {
+        *self.entries.first().unwrap()
+    }
 }

@@ -95,38 +95,51 @@ fn main() {
     }
 
     let mut cfg_db = third_cfg::CfgDb::new(binary.entry_point);
+    let mut ssa_functions = vec![];
 
-    let blocks = third_cfg::walk_code_blocks(&cfg_db, binary.sections.text);
-    cfg_db.set_blocks(blocks);
+    loop {
+        let blocks = third_cfg::walk_code_blocks(&cfg_db, binary.sections.text);
+        cfg_db.set_blocks(blocks);
 
-    let functions = third_cfg::derive_functions(&cfg_db);
-    cfg_db.set_functions(functions);
+        let functions = third_cfg::derive_functions(&cfg_db);
+        cfg_db.set_functions(functions);
 
-    let mut ssa_functions = Vec::with_capacity(cfg_db.functions().len());
+        ssa_functions.clear();
+        let mut all_jump_tables = vec![];
 
-    for func in cfg_db.functions().iter() {
-        println!(
-            "------------------------------ SSA {} ------------------------------",
-            func.addr()
-        );
-        let mut ssa_func = lir::flat::func_from_flat(func, cfg_db.blocks());
-        lir::analysis::optimise(&mut ssa_func, binary.sections.rdata);
+        for func in cfg_db.functions().iter() {
+            println!(
+                "------------------------------ SSA {} ------------------------------",
+                func.addr()
+            );
+            let mut ssa_func = lir::flat::func_from_flat(func, cfg_db.blocks());
+            lir::analysis::optimise(&mut ssa_func, binary.sections.rdata);
 
-        println!("{}", ssa_func.fmt());
+            println!("{}", ssa_func.fmt());
 
-        let jump_tables = lir::analysis::detect_jump_tables::run(&ssa_func);
-        if jump_tables.len() > 0 {
-            log::info!("> Detected jump tables at {}:", ssa_func.addr);
-            for table in jump_tables {
-                log::info!(
-                    "  - {} (size {})",
-                    table.base_addr,
-                    MaybeUnknown(table.size)
-                );
+            let jump_tables = lir::analysis::detect_jump_tables::run(&ssa_func);
+            if jump_tables.len() > 0 {
+                log::info!("> Detected jump tables at {}:", ssa_func.addr);
+                for table in &jump_tables {
+                    log::info!(
+                        "  - {} (size {})",
+                        table.base_addr,
+                        MaybeUnknown(table.size)
+                    );
+                }
             }
+            all_jump_tables.extend(jump_tables.into_iter().filter_map(|table| {
+                lir::analysis::detect_jump_tables::jump_table_to_cfg(table, binary.sections.text)
+            }));
+
+            ssa_functions.push(ssa_func);
         }
 
-        ssa_functions.push(ssa_func);
+        let all_jump_tables_len = all_jump_tables.len();
+        cfg_db.set_jump_tables(all_jump_tables);
+        if all_jump_tables_len == 0 {
+            break;
+        }
     }
 
     lir::analysis::collect_allocations::run(&ssa_functions);

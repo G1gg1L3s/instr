@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+    SectionData,
     addr::Addr,
     lir::{
         analysis::def_use::{self, ValueSource},
@@ -9,6 +10,7 @@ use crate::{
         ins::{BinOp, Condition, InsKind, JumpTarget, MemSpace, TerminatorKind},
         value::{Imm, Value, ValueId},
     },
+    third_cfg,
 };
 
 pub fn run(func: &SsaFunction) -> Vec<JumpTableCandidate> {
@@ -16,12 +18,13 @@ pub fn run(func: &SsaFunction) -> Vec<JumpTableCandidate> {
     let mut res = vec![];
 
     for block in func.blocks.values() {
-        let Some((addr, index)) = detect_jump_table(func, &def_use, block) else {
+        let Some((ins_addr, base_addr, index)) = detect_jump_table(func, &def_use, block) else {
             continue;
         };
         let size = derive_size(func, index);
         res.push(JumpTableCandidate {
-            base_addr: addr,
+            ins_addr,
+            base_addr,
             idx: index,
             size,
         });
@@ -41,6 +44,7 @@ fn get_ins<'a>(
 }
 
 pub struct JumpTableCandidate {
+    pub ins_addr: Addr,
     pub base_addr: Addr,
     pub idx: ValueId,
     pub size: Option<u32>,
@@ -50,9 +54,9 @@ fn detect_jump_table(
     func: &SsaFunction,
     def_use: &HashMap<ValueId, ValueSource>,
     block: &Block,
-) -> Option<(Addr, ValueId)> {
-    let TerminatorKind::Jump(JumpTarget::Unknown { addr, args: _ }) = &block.terminator().kind
-    else {
+) -> Option<(Addr, Addr, ValueId)> {
+    let terminator = block.terminator();
+    let TerminatorKind::Jump(JumpTarget::Unknown { addr, args: _ }) = &terminator.kind else {
         return None;
     };
 
@@ -96,7 +100,11 @@ fn detect_jump_table(
         return None;
     };
 
-    Some((Addr(*imm_addr), *idx))
+    Some((
+        terminator.addr.expect("jump should always have addr"),
+        Addr(*imm_addr),
+        *idx,
+    ))
 }
 
 fn derive_size(func: &SsaFunction, jump_table_idx: ValueId) -> Option<u32> {
@@ -150,4 +158,24 @@ fn derive_size(func: &SsaFunction, jump_table_idx: ValueId) -> Option<u32> {
             None
         }
     }
+}
+
+pub fn jump_table_to_cfg(
+    table: JumpTableCandidate,
+    text: SectionData<'_>,
+) -> Option<third_cfg::JumpTable> {
+    let size = table.size.unwrap();
+    let mut entries = Vec::with_capacity(size as usize);
+    for idx in 0..size {
+        let target = text.read_u32_le(table.base_addr + idx * 4);
+        let target = Addr(target);
+        assert!(text.contains(target));
+        entries.push(target);
+    }
+
+    Some(third_cfg::JumpTable {
+        ins_addr: table.ins_addr,
+        entries,
+        size: Some(size),
+    })
 }
