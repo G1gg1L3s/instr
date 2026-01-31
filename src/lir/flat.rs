@@ -24,6 +24,7 @@ enum FlatVar {
     Temp(flat_ir::TempId),
     Flags,
     Mem,
+    X87Stack,
 }
 
 impl FlatVar {
@@ -37,6 +38,7 @@ impl FlatVar {
             // TODO: is it correct?
             FlatVar::Flags => Ty::Flags(Flags::all()),
             FlatVar::Mem => Ty::Mem,
+            FlatVar::X87Stack => Ty::X87Stack,
         }
     }
 
@@ -46,6 +48,7 @@ impl FlatVar {
             FlatVar::Temp(_) => None,
             FlatVar::Flags => None,
             FlatVar::Mem => Some(Io::Mem),
+            FlatVar::X87Stack => None,
         }
     }
 }
@@ -73,6 +76,7 @@ impl std::fmt::Display for FlatVar {
             FlatVar::Temp(temp_id) => write!(f, "{}", temp_id),
             FlatVar::Flags => write!(f, "flags"),
             FlatVar::Mem => write!(f, "mem"),
+            FlatVar::X87Stack => write!(f, "x87stack"),
         }
     }
 }

@@ -241,6 +241,28 @@ pub enum InsKind {
         count: ValueId,
         size: RawSize,
     },
+
+    X87InitStack {
+        dst: ValueId,
+    },
+
+    X87Push {
+        dst_stack: ValueId,
+        src_stack: ValueId,
+        value: ValueId,
+    },
+
+    X87Pop {
+        dst_stack: ValueId,
+        src_stack: ValueId,
+        dst: Option<ValueId>,
+    },
+
+    X87Peek {
+        dst: ValueId,
+        stack: ValueId,
+        idx: u8,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -387,6 +409,29 @@ impl Ins {
                 callback(src_addr);
                 callback(count);
             }
+            InsKind::X87InitStack { dst } => callback(dst),
+            InsKind::X87Push {
+                dst_stack,
+                src_stack,
+                value,
+            } => {
+                callback(dst_stack);
+                callback(src_stack);
+                callback(value);
+            }
+            InsKind::X87Pop {
+                dst_stack,
+                src_stack,
+                dst,
+            } => {
+                callback(dst_stack);
+                callback(src_stack);
+                dst.into_iter().for_each(callback);
+            }
+            InsKind::X87Peek { dst, stack, idx: _ } => {
+                callback(dst);
+                callback(stack);
+            }
         }
     }
 
@@ -498,6 +543,29 @@ impl Ins {
                 callback(*dst_addr);
                 callback(*count);
             }
+            InsKind::X87InitStack { dst: _ } => {}
+            InsKind::X87Push {
+                dst_stack: _,
+                src_stack,
+                value,
+            } => {
+                callback(*src_stack);
+                callback(*value);
+            }
+            InsKind::X87Pop {
+                dst_stack: _,
+                src_stack,
+                dst: _,
+            } => {
+                callback(*src_stack);
+            }
+            InsKind::X87Peek {
+                dst: _,
+                stack,
+                idx: _,
+            } => {
+                callback(*stack);
+            }
         }
     }
 
@@ -518,37 +586,41 @@ impl Ins {
             InsKind::ExtractFlag { .. } => false,
             InsKind::Memcpy { .. } => true,
             InsKind::Memset { .. } => true,
+            // TODO: is it correct?
+            InsKind::X87InitStack { .. } => true,
+            InsKind::X87Push { .. } => true,
+            InsKind::X87Pop { .. } => true,
+            InsKind::X87Peek { .. } => true,
         }
     }
 
-    pub fn instr_result(&self) -> heapless::Vec<ValueId, 16> {
-        let mut res = heapless::Vec::<ValueId, 16>::new();
+    pub fn visit_result_values(&self, mut callback: impl FnMut(ValueId)) {
         match &self.kind {
             InsKind::Hole => {}
-            InsKind::Uninit { dst } => res.push(*dst).unwrap(),
+            InsKind::Uninit { dst } => callback(*dst),
             InsKind::BinOp { dst, flags, .. } => {
-                res.push(*dst).unwrap();
+                callback(*dst);
                 if let Some(flags) = flags {
-                    res.push(*flags).unwrap()
+                    callback(*flags)
                 }
             }
-            InsKind::UnOp { op: _, dst, src: _ } => res.push(*dst).unwrap(),
-            InsKind::Unimpl { dst } => res.push(*dst).unwrap(),
-            InsKind::Load { dst, .. } => res.push(*dst).unwrap(),
-            InsKind::Cond { dst, .. } => res.push(*dst).unwrap(),
-            InsKind::Store { dst_mem, .. } => res.push(*dst_mem).unwrap(),
-            InsKind::Call { result, .. } => res.extend(result.values()),
-            InsKind::Extract { dst, .. } => res.push(*dst).unwrap(),
-            InsKind::Insert { dst, .. } => res.push(*dst).unwrap(),
-            InsKind::Cast { dst, .. } => res.push(*dst).unwrap(),
-            InsKind::ExtractFlag { dst, .. } => res.push(*dst).unwrap(),
+            InsKind::UnOp { op: _, dst, src: _ } => callback(*dst),
+            InsKind::Unimpl { dst } => callback(*dst),
+            InsKind::Load { dst, .. } => callback(*dst),
+            InsKind::Cond { dst, .. } => callback(*dst),
+            InsKind::Store { dst_mem, .. } => callback(*dst_mem),
+            InsKind::Call { result, .. } => result.values().for_each(callback),
+            InsKind::Extract { dst, .. } => callback(*dst),
+            InsKind::Insert { dst, .. } => callback(*dst),
+            InsKind::Cast { dst, .. } => callback(*dst),
+            InsKind::ExtractFlag { dst, .. } => callback(*dst),
             InsKind::Memset {
                 dst_mem,
                 src_mem: _,
                 addr: _,
                 value: _,
                 count: _,
-            } => res.push(*dst_mem).unwrap(),
+            } => callback(*dst_mem),
             InsKind::Memcpy {
                 dst_mem,
                 src_mem: _,
@@ -556,9 +628,36 @@ impl Ins {
                 src_addr: _,
                 count: _,
                 size: _,
-            } => res.push(*dst_mem).unwrap(),
+            } => callback(*dst_mem),
+            InsKind::X87InitStack { dst } => callback(*dst),
+            InsKind::X87Push {
+                dst_stack,
+                src_stack: _,
+                value: _,
+            } => callback(*dst_stack),
+            InsKind::X87Pop {
+                dst_stack,
+                src_stack: _,
+                dst,
+            } => {
+                callback(*dst_stack);
+                if let Some(dst) = dst {
+                    callback(*dst);
+                }
+            }
+            InsKind::X87Peek {
+                dst,
+                stack: _,
+                idx: _,
+            } => {
+                callback(*dst);
+            }
         }
+    }
 
+    pub fn instr_result(&self) -> heapless::Vec<ValueId, 16> {
+        let mut res = heapless::Vec::<ValueId, 16>::new();
+        self.visit_result_values(|v| res.push(v).unwrap());
         res
     }
 }
@@ -633,7 +732,6 @@ impl std::fmt::Display for Ins {
                     "{dst_mem} = __memset {src_mem} ({addr}, {value}, {count})"
                 )
             }
-
             InsKind::Memcpy {
                 dst_mem,
                 src_mem,
@@ -647,6 +745,21 @@ impl std::fmt::Display for Ins {
                     "{dst_mem} = __memcpy {src_mem} ({dst_addr}, {src_addr}, {size}:{count})",
                 )
             }
+            InsKind::X87InitStack { dst } => write!(f, "{dst} = x87.init"),
+            InsKind::X87Push {
+                dst_stack,
+                src_stack,
+                value,
+            } => write!(f, "{dst_stack} = x87.push {src_stack} {value}",),
+            InsKind::X87Pop {
+                dst_stack,
+                src_stack,
+                dst,
+            } => match dst {
+                Some(dst) => write!(f, "{dst_stack}, {dst} = x87.pop {src_stack}",),
+                None => write!(f, "{dst_stack}, _ = x87.pop {src_stack}",),
+            },
+            InsKind::X87Peek { dst, stack, idx } => write!(f, "{dst} = x87.peek {stack}[{idx}]",),
         }
     }
 }

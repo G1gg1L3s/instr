@@ -176,7 +176,6 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*value)
                 ),
             },
-
             InsKind::Cast { dst, src } => {
                 write!(
                     f,
@@ -192,7 +191,6 @@ impl<'a> Display for InsFmt<'a> {
                 self.fmt.val(*dst),
                 self.fmt.val(*src)
             ),
-
             InsKind::Memset {
                 dst_mem,
                 src_mem,
@@ -210,7 +208,6 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*count),
                 )
             }
-
             InsKind::Memcpy {
                 dst_mem,
                 src_mem,
@@ -229,6 +226,43 @@ impl<'a> Display for InsFmt<'a> {
                     self.fmt.val(*count),
                 )
             }
+            InsKind::X87InitStack { dst } => write!(f, "{} = x87.init", self.fmt.val(*dst)),
+            InsKind::X87Push {
+                dst_stack,
+                src_stack,
+                value,
+            } => write!(
+                f,
+                "{} = x87.push {} {}",
+                self.fmt.val(*dst_stack),
+                self.fmt.val(*src_stack),
+                self.fmt.val(*value)
+            ),
+            InsKind::X87Pop {
+                dst_stack,
+                src_stack,
+                dst,
+            } => match dst {
+                Some(dst) => write!(
+                    f,
+                    "{}, {} = x87.pop {}",
+                    self.fmt.val(*dst_stack),
+                    self.fmt.val(*dst),
+                    self.fmt.val(*src_stack),
+                ),
+                None => write!(
+                    f,
+                    "{}, _ = x87.pop {}",
+                    self.fmt.val(*dst_stack),
+                    self.fmt.val(*src_stack),
+                ),
+            },
+            InsKind::X87Peek { dst, stack, idx } => write!(
+                f,
+                "{} = x87.peek {}[{idx}]",
+                self.fmt.val(*dst),
+                self.fmt.val(*stack),
+            ),
         }
     }
 }
