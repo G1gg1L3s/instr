@@ -47,7 +47,15 @@ pub fn exec(func: &mut SsaFunction) {
                 (c, BinOp::Sub) => {
                     worklist.push((ins_id, c, lhs, Arg::Val(rhs), dst));
                 }
-                (Condition::Equal | Condition::NotEqual, BinOp::BitAnd) if lhs == rhs => {
+                (
+                    Condition::Equal
+                    | Condition::NotEqual
+                    | Condition::SignLess
+                    | Condition::SignedLessEqual
+                    | Condition::SignedGreater
+                    | Condition::SignedGreaterEqual,
+                    BinOp::BitAnd,
+                ) if lhs == rhs => {
                     worklist.push((ins_id, cond, lhs, Arg::Imm(0), dst));
                 }
                 _ => {}
