@@ -6,6 +6,7 @@ use instr::{
     addr::Addr,
     cfg::{Block, BlockType},
     cfg_func::GraphFunctionCollector,
+    fmt::MaybeUnknown,
     ins::{Instruction, Op, parse_instruction},
     instruction_signature, instruction_signature_full, lir,
     obj::{self, ObjDatabase, Object, ObjectTyp},
@@ -105,7 +106,21 @@ fn main() {
         );
         let mut ssa_func = lir::flat::func_from_flat(func, &blocks);
         lir::analysis::optimise(&mut ssa_func, binary.sections.rdata);
+
         println!("{}", ssa_func.fmt());
+
+        let jump_tables = lir::analysis::detect_jump_tables::run(&ssa_func);
+        if jump_tables.len() > 0 {
+            log::info!("> Detected jump tables at {}:", ssa_func.addr);
+            for table in jump_tables {
+                log::info!(
+                    "  - {} (size {})",
+                    table.base_addr,
+                    MaybeUnknown(table.size)
+                );
+            }
+        }
+
         ssa_functions.push(ssa_func);
     }
 

@@ -1593,10 +1593,28 @@ fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
 }
 
 fn lower_jmp(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
+    detect_log_jump_table(ins);
+
     let target = lower_operand(ctx, ins, 0).lower_load(ctx);
     Terminator::Jump {
         target,
         addr: Addr(ins.ip32()),
+    }
+}
+
+fn detect_log_jump_table(ins: &iced_x86::Instruction) {
+    if ins.op_kind(0) == OpKind::Memory
+        && ins.memory_index() != iced_x86::Register::None
+        && ins.memory_index_scale() == 4
+    {
+        let disp = ins.memory_displacement32();
+        if disp != 0 {
+            log::debug!(
+                ">> Instruction {}: {} looks like jump table",
+                Addr(ins.ip32()),
+                ins
+            );
+        }
     }
 }
 

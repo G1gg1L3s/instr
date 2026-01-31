@@ -6,6 +6,7 @@ pub mod const_folding;
 pub mod cse;
 pub mod dce;
 pub mod def_use;
+pub mod detect_jump_tables;
 pub mod fill_static_reads;
 pub mod promote_known_targets;
 pub mod reassociate;

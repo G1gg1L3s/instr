@@ -3,6 +3,7 @@ pub mod block_set;
 pub mod cfg;
 pub mod cfg_func;
 pub mod flat_ir;
+pub mod fmt;
 pub mod ins;
 pub mod lir;
 pub mod new_cfg;
