@@ -25,10 +25,16 @@ pub struct InsBuilder<'a> {
 impl<'a> InsBuilder<'a> {
     pub fn prepend_uninit_read(&mut self, ty: Ty) -> ValueId {
         let dst = self.func.values.add(Value::Temp { ty });
-        let ins = self
-            .func
-            .ins
-            .add(Ins::new(self.addr, InsKind::Uninit { dst }));
+
+        // TODO: this is hacky and ideally should be pass, maybe?
+        // But this is simpler and it works.
+        let ins = if ty == Ty::X87Stack {
+            InsKind::X87InitStack { dst }
+        } else {
+            InsKind::Uninit { dst }
+        };
+
+        let ins = self.func.ins.add(Ins::new(self.addr, ins));
         self.func.blocks[self.block].ins.insert(0, ins);
         dst
     }
