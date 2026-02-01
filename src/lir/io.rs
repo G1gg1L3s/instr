@@ -64,6 +64,10 @@ impl IoValues {
         self.vals.get(&io).copied()
     }
 
+    pub fn remove(&mut self, io: Io) -> Option<ValueId> {
+        self.vals.remove(&io)
+    }
+
     pub fn keys(&self) -> impl Iterator<Item = Io> {
         self.vals.keys().copied()
     }

@@ -2,8 +2,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::lir::{
     analysis::def_use,
+    block::{BlockId, Blocks},
     func::SsaFunction,
-    ins::InsKind,
+    ins::{InsKind, TerminatorKind},
+    io::IoValues,
     value::{Value, ValueId},
 };
 
@@ -100,6 +102,8 @@ pub fn exec(func: &mut SsaFunction) {
             .ins
             .retain(|&ins_id| !matches!(func.ins[ins_id].kind, InsKind::Hole));
     }
+    remove_transitive_outputs(func, &mut uses);
+    log::trace!(">> Uses: {uses:?}");
 
     remove_inputs_with_0_uses(func, uses);
 }
@@ -127,5 +131,52 @@ fn remove_inputs_with_0_uses(func: &mut SsaFunction, uses: HashMap<ValueId, usiz
 
     for val in inputs_to_remove {
         func.values[val] = Value::Invalid;
+    }
+}
+
+fn return_args(blocks: &mut Blocks) -> Vec<&mut IoValues> {
+    blocks
+        .values_mut()
+        .filter_map(|b| match &mut b.terminator_mut().kind {
+            TerminatorKind::Ret { adjust: _, args } => Some(args),
+            _ => None,
+        })
+        .collect()
+}
+
+fn remove_transitive_outputs(func: &mut SsaFunction, uses: &mut HashMap<ValueId, usize>) {
+    let mut return_args = return_args(&mut func.blocks);
+
+    let mut to_delete = vec![];
+
+    for (io, val) in func.inputs.iter() {
+        let mut returns = vec![];
+        for return_io_values in &return_args {
+            if let Some(val) = return_io_values.get(*io) {
+                returns.push(val);
+            }
+        }
+
+        let Some((head, tail)) = returns.split_first() else {
+            // Input value is not used in any return, so we don't need to delete it,
+            // so we are done
+            continue;
+        };
+
+        if head == val && tail.iter().all(|x| x == head) {
+            to_delete.push((*io, *val));
+        }
+    }
+
+    for (io, val) in to_delete {
+        log::trace!(">> Removing {io}:{val} from function outputs");
+        let uses = uses
+            .get_mut(&val)
+            .expect("entry should exist because terminator has uses");
+
+        for return_io_values in &mut return_args {
+            return_io_values.remove(io);
+            *uses -= 1;
+        }
     }
 }
