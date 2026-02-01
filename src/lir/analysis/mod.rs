@@ -21,6 +21,8 @@ pub fn optimise(func: &mut SsaFunction, rdata: SectionData<'_>) {
         let mut changed = false;
 
         changed |= const_folding::run(func);
+        func.patch_resolve_aliases();
+
         changed |= reassociate::run(func);
         changed |= cse::run(func);
 

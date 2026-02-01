@@ -75,6 +75,10 @@ impl Values {
         val
     }
 
+    pub fn resolve(&self, val: ValueId) -> &Value {
+        &self[self.resolve_alias(val)]
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }

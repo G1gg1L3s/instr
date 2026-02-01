@@ -12,6 +12,7 @@ pub fn run(func: &mut SsaFunction) -> bool {
     for (_, ins) in func.ins.iter_mut() {
         changed |= fold_bin_ins(ins, &mut func.values);
         changed |= fold_const_cast(ins, &mut func.values);
+        // changed |= fold_identity_operation(ins, &mut func.values);
     }
 
     changed
@@ -135,4 +136,35 @@ fn fold_const_cast(ins: &mut Ins, values: &mut Values) -> bool {
     values[dst] = Value::Imm(replacement);
     ins.kind = InsKind::Hole;
     true
+}
+
+fn fold_identity_operation(ins: &mut Ins, values: &mut Values) -> bool {
+    let &InsKind::BinOp {
+        op: op @ (BinOp::Add | BinOp::Sub),
+        dst,
+        lhs,
+        rhs,
+        flags: None,
+    } = &ins.kind
+    else {
+        return false;
+    };
+
+    let lhs_val = values.resolve(lhs);
+    let rhs_val = values.resolve(rhs);
+
+    let val = match (lhs_val, rhs_val) {
+        (_, x) if is_zero(x) => lhs,
+        (x, _) if is_zero(x) => rhs,
+        _ => return false,
+    };
+
+    log::trace!(">> Reducing identity operation {dst} = {lhs} {op} {rhs} => {dst} = {val}");
+    ins.kind = InsKind::Hole;
+    values[dst] = Value::Alias { to: val };
+    true
+}
+
+fn is_zero(val: &Value) -> bool {
+    matches!(val, Value::Imm(Imm::U8(0) | Imm::U16(0) | Imm::U32(0)))
 }
