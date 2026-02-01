@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SsaFunction {
     pub addr: Addr,
     pub ins: Instrs,
@@ -46,6 +46,7 @@ impl SsaFunction {
             func: self,
             block,
             addr: None,
+            idx: None,
         }
     }
 
@@ -54,6 +55,16 @@ impl SsaFunction {
             func: self,
             block,
             addr: Some(addr),
+            idx: None,
+        }
+    }
+
+    pub fn ins_addr_idx(&mut self, block: BlockId, addr: Addr, idx: usize) -> InsBuilder<'_> {
+        InsBuilder {
+            func: self,
+            block,
+            addr: Some(addr),
+            idx: Some(idx),
         }
     }
 

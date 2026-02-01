@@ -20,6 +20,7 @@ pub struct InsBuilder<'a> {
     pub func: &'a mut SsaFunction,
     pub block: BlockId,
     pub addr: Option<Addr>,
+    pub idx: Option<usize>,
 }
 
 impl<'a> InsBuilder<'a> {
@@ -41,7 +42,11 @@ impl<'a> InsBuilder<'a> {
 
     pub fn emit(&mut self, ins: InsKind) {
         let ins = self.func.ins.add(Ins::new(self.addr, ins));
-        self.func.blocks[self.block].ins.push(ins);
+        if let Some(idx) = self.idx {
+            self.func.blocks[self.block].ins.insert(idx, ins);
+        } else {
+            self.func.blocks[self.block].ins.push(ins);
+        }
     }
 
     pub fn iconst(&mut self, imm: Imm) -> ValueId {

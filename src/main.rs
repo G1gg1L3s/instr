@@ -139,6 +139,19 @@ fn main() {
         }
     }
 
+    loop {
+        let changed =
+            lir::analysis::call_signature_prunning::run(&mut ssa_functions, cfg_db.entry());
+
+        if !changed {
+            break;
+        }
+
+        for func in ssa_functions.iter_mut() {
+            lir::analysis::optimise(func, binary.sections.rdata);
+        }
+    }
+
     for func in &ssa_functions {
         println!(
             "------------------------------ SSA {} ------------------------------",
