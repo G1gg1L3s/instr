@@ -19,12 +19,6 @@ use crate::{
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VarId(u16);
 
-impl VarId {
-    fn to_idx(self) -> u16 {
-        self.0
-    }
-}
-
 impl std::fmt::Debug for VarId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "var{}", self.0)

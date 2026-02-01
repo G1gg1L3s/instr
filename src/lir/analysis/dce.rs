@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::lir::{
     analysis::def_use,
-    block::{BlockId, Blocks},
+    block::Blocks,
     func::SsaFunction,
     ins::{InsKind, TerminatorKind},
     io::IoValues,
