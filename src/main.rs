@@ -149,8 +149,6 @@ fn main() {
 
     lir::analysis::collect_allocations::run(&ssa_functions);
 
-    lir::analysis::cfg_analysis::run(&ssa_functions);
-
     println!(".funcs: # Detected {} functions", cfg_db.functions().len());
     for func in cfg_db.functions() {
         println!(

@@ -7,7 +7,6 @@ use crate::{
 };
 
 pub struct CfgDb {
-    #[allow(unused)]
     entry: Addr,
     block_starts: BTreeSet<Addr>,
     function_starts: BTreeSet<Addr>,
@@ -55,6 +54,10 @@ impl CfgDb {
 
     pub fn get_jump_table(&self, instruction_addr: Addr) -> Option<&JumpTable> {
         self.jump_tables.get(&instruction_addr)
+    }
+
+    pub fn entry(&self) -> Addr {
+        self.entry
     }
 }
 
