@@ -110,14 +110,8 @@ fn main() {
         let mut all_jump_tables = vec![];
 
         for func in cfg_db.functions().iter() {
-            println!(
-                "------------------------------ SSA {} ------------------------------",
-                func.addr()
-            );
             let mut ssa_func = lir::flat::func_from_flat(func, cfg_db.blocks());
             lir::analysis::optimise(&mut ssa_func, binary.sections.rdata);
-
-            println!("{}", ssa_func.fmt());
 
             let jump_tables = lir::analysis::detect_jump_tables::run(&ssa_func);
             if jump_tables.len() > 0 {

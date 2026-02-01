@@ -48,7 +48,7 @@ impl FlatVar {
             FlatVar::Temp(_) => None,
             FlatVar::Flags => None,
             FlatVar::Mem => Some(Io::Mem),
-            FlatVar::X87Stack => None,
+            FlatVar::X87Stack => Some(Io::X87Stack),
         }
     }
 }
@@ -105,6 +105,19 @@ const REGS: [flat_ir::Reg; 8] = [
     flat_ir::Reg::Ebp,
 ];
 
+const DEFAULT_INPUT_OUTPUT: [FlatVar; 10] = [
+    FlatVar::Mem,
+    FlatVar::Reg(flat_ir::Reg::Esp),
+    FlatVar::Reg(flat_ir::Reg::Eax),
+    FlatVar::Reg(flat_ir::Reg::Ebx),
+    FlatVar::Reg(flat_ir::Reg::Ecx),
+    FlatVar::Reg(flat_ir::Reg::Edx),
+    FlatVar::Reg(flat_ir::Reg::Esi),
+    FlatVar::Reg(flat_ir::Reg::Edi),
+    FlatVar::Reg(flat_ir::Reg::Ebp),
+    FlatVar::X87Stack,
+];
+
 pub fn func_from_flat(
     func: &third_cfg::Function,
     blocks: &BTreeMap<Addr, flat_ir::Block>,
@@ -136,24 +149,18 @@ pub fn func_from_flat(
             addr: None,
         };
 
-        {
-            let param = block_state.state.builder.new_param(Ty::Mem);
-            let var = block_state.get_var(FlatVar::Mem);
-            block_state
+        for var in DEFAULT_INPUT_OUTPUT {
+            let param = block_state
                 .state
                 .builder
-                .add_entry_param(entry, Io::Mem, param);
-            block_state.state.builder.write_var(var, param);
-        }
+                .new_param(var.ty(block_state.flat_block));
 
-        for reg in REGS {
-            let var = block_state.get_var(FlatVar::Reg(reg));
-            let param = block_state.state.builder.new_param(Ty::U32);
+            let var_id = block_state.get_var(var);
             block_state
                 .state
                 .builder
-                .add_entry_param(entry, reg_to_io(reg), param);
-            block_state.state.builder.write_var(var, param);
+                .add_entry_param(entry, var.to_io().unwrap(), param);
+            block_state.state.builder.write_var(var_id, param);
         }
     }
 
@@ -239,12 +246,13 @@ fn reg_to_io(reg: flat_ir::Reg) -> Io {
     }
 }
 
-const FUNC_ARGS: [FlatVar; 5] = [
+const FUNC_ARGS: [FlatVar; 6] = [
     FlatVar::Mem,
     FlatVar::Reg(flat_ir::Reg::Esp),
     FlatVar::Reg(flat_ir::Reg::Eax),
     FlatVar::Reg(flat_ir::Reg::Ecx),
     FlatVar::Reg(flat_ir::Reg::Edx),
+    FlatVar::X87Stack,
 ];
 
 impl<'a> BlockState<'a> {
@@ -378,10 +386,10 @@ impl<'a> BlockState<'a> {
     }
 
     fn lower_ret(&mut self, stack_adjust: u16) {
-        let args = std::iter::once(FlatVar::Mem)
-            .chain(REGS.into_iter().map(FlatVar::Reg))
+        let args = DEFAULT_INPUT_OUTPUT
+            .iter()
             .map(|flatvar| {
-                let var = self.get_var(flatvar);
+                let var = self.get_var(*flatvar);
                 let val = self.state.builder.read_var(var);
                 (flatvar.to_io().unwrap(), val)
             })
@@ -710,6 +718,7 @@ fn io_to_flatvar(io: Io) -> FlatVar {
         Io::Edi => FlatVar::Reg(flat_ir::Reg::Edi),
         Io::Ebp => FlatVar::Reg(flat_ir::Reg::Ebp),
         Io::Eip => FlatVar::Reg(flat_ir::Reg::Eip),
+        Io::X87Stack => FlatVar::X87Stack,
     }
 }
 

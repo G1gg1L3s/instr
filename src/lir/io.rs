@@ -15,10 +15,24 @@ pub enum Io {
     Edi,
     Ebp,
     Eip,
+
+    X87Stack,
 }
 impl Io {
     pub fn ty(&self) -> Ty {
-        Ty::U32
+        match self {
+            Io::Mem => Ty::Mem,
+            Io::Esp => Ty::U32,
+            Io::Eax => Ty::U32,
+            Io::Ebx => Ty::U32,
+            Io::Ecx => Ty::U32,
+            Io::Edx => Ty::U32,
+            Io::Esi => Ty::U32,
+            Io::Edi => Ty::U32,
+            Io::Ebp => Ty::U32,
+            Io::Eip => Ty::U32,
+            Io::X87Stack => Ty::X87Stack,
+        }
     }
 }
 
@@ -35,6 +49,7 @@ impl std::fmt::Display for Io {
             Io::Ebp => write!(f, "ebp"),
             Io::Esp => write!(f, "esp"),
             Io::Eip => write!(f, "eip"),
+            Io::X87Stack => write!(f, "x87stack"),
         }
     }
 }
