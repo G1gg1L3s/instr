@@ -270,7 +270,7 @@ impl SsaBuilder {
         log::trace!(">> Sealing {}", block);
         self.blocks.entry(block).or_default().sealed = true;
 
-        let mut entries: Vec<(VarId, ValueId)> =
+        let entries: Vec<(VarId, ValueId)> =
             self.incomplete_phis.remove(&block).unwrap_or_default();
 
         let preds = self.func.blocks[block].predecessors.clone();
