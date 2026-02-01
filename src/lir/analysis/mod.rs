@@ -1,6 +1,7 @@
 use crate::{SectionData, lir::func::SsaFunction};
 
 pub mod bit_field_forwarding;
+pub mod cfg_analysis;
 pub mod collect_allocations;
 pub mod const_folding;
 pub mod cse;
