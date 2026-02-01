@@ -1,6 +1,11 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::lir::{analysis::def_use, func::SsaFunction, ins::InsKind, value::ValueId};
+use crate::lir::{
+    analysis::def_use,
+    func::SsaFunction,
+    ins::InsKind,
+    value::{Value, ValueId},
+};
 
 fn compute_uses(func: &SsaFunction) -> HashMap<ValueId, usize> {
     let mut uses = HashMap::with_capacity(func.values.len());
@@ -50,10 +55,10 @@ pub fn exec(func: &mut SsaFunction) {
         }
     }
 
-    let mut removed = HashSet::with_capacity(worklist.len());
+    let mut removed_ins = HashSet::with_capacity(worklist.len());
 
     while let Some(ins_id) = worklist.pop_front() {
-        let new = removed.insert(ins_id);
+        let new = removed_ins.insert(ins_id);
         if !new {
             continue;
         }
@@ -82,7 +87,11 @@ pub fn exec(func: &mut SsaFunction) {
         });
     }
 
-    for ins_id in removed {
+    for ins_id in removed_ins {
+        for val in func.ins[ins_id].instr_result() {
+            func.values[val] = Value::Invalid;
+        }
+
         func.ins[ins_id].kind = InsKind::Hole;
     }
 
@@ -92,24 +101,31 @@ pub fn exec(func: &mut SsaFunction) {
             .retain(|&ins_id| !matches!(func.ins[ins_id].kind, InsKind::Hole));
     }
 
-    // TODO: need to consider terminators
-    // let mut inputs_to_remove = vec![];
-    // func.blocks.first_mut().params.retain(|val| {
-    //     let uses = uses.get(&val).copied().unwrap_or(0);
-    //     if uses == 0 {
-    //         inputs_to_remove.push(*val);
-    //         false
-    //     } else {
-    //         true
-    //     }
-    // });
+    remove_inputs_with_0_uses(func, uses);
+}
 
-    // func.inputs.retain(|io, v| {
-    //     if inputs_to_remove.contains(v) {
-    //         log::trace!(">> Removing input {io}:{v} from {}", func.addr);
-    //         false
-    //     } else {
-    //         true
-    //     }
-    // });
+fn remove_inputs_with_0_uses(func: &mut SsaFunction, uses: HashMap<ValueId, usize>) {
+    let mut inputs_to_remove = vec![];
+    func.blocks.first_mut().params.retain(|val| {
+        let uses = uses.get(&val).copied().unwrap_or(0);
+        if uses == 0 {
+            inputs_to_remove.push(*val);
+            false
+        } else {
+            true
+        }
+    });
+
+    func.inputs.retain(|io, v| {
+        if inputs_to_remove.contains(v) {
+            log::trace!(">> Removing input {io}:{v} from {}", func.addr);
+            false
+        } else {
+            true
+        }
+    });
+
+    for val in inputs_to_remove {
+        func.values[val] = Value::Invalid;
+    }
 }
