@@ -7,6 +7,7 @@ use crate::{
 };
 
 pub struct CfgDb {
+    #[allow(unused)]
     entry: Addr,
     block_starts: BTreeSet<Addr>,
     function_starts: BTreeSet<Addr>,

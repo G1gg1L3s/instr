@@ -95,7 +95,6 @@ fn main() {
     }
 
     let mut cfg_db = third_cfg::CfgDb::new(binary.entry_point);
-    cfg_db.insert_func_addr(Addr(0x420f50));
 
     let mut ssa_functions = vec![];
 
@@ -144,6 +143,14 @@ fn main() {
         if all_jump_tables_len == 0 {
             break;
         }
+    }
+
+    for func in &ssa_functions {
+        println!(
+            "------------------------------ SSA {} ------------------------------",
+            func.addr
+        );
+        println!("{}", func.fmt());
     }
 
     lir::analysis::collect_allocations::run(&ssa_functions);
