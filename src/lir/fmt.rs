@@ -5,7 +5,7 @@ use crate::lir::{
     flags::FlagsGroup,
     func::SsaFunction,
     ins::{CallTarget, InsId, InsKind, JumpTarget, Terminator, TerminatorKind},
-    io::IoValues,
+    io::{Io, IoValues},
     ty::Ty,
     value::{Value, ValueId},
 };
@@ -28,33 +28,34 @@ impl<'a, T: std::fmt::Display> std::fmt::Display for FmtList<'a, T> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct FuncFmt<'a> {
     func: &'a SsaFunction,
+    io_to_val: HashMap<ValueId, Io>,
 }
 
 pub struct InsFmt<'a> {
-    fmt: FuncFmt<'a>,
+    fmt: &'a FuncFmt<'a>,
     ins: InsId,
 }
 
 pub struct ValueFmt<'a> {
-    fmt: FuncFmt<'a>,
+    fmt: &'a FuncFmt<'a>,
     val: ValueId,
 }
 
 pub struct MaybeValueFmt<'a> {
-    fmt: FuncFmt<'a>,
+    fmt: &'a FuncFmt<'a>,
     val: Option<ValueId>,
 }
 
 pub struct ValuesFmt<'a> {
-    fmt: FuncFmt<'a>,
+    fmt: &'a FuncFmt<'a>,
     vals: &'a [ValueId],
 }
 
 pub struct IoValuesFmt<'a> {
-    fmt: FuncFmt<'a>,
+    fmt: &'a FuncFmt<'a>,
     vals: &'a IoValues,
 }
 
@@ -143,7 +144,7 @@ impl<'a> Display for InsFmt<'a> {
                 f,
                 "({}) = call {}({})",
                 self.fmt.io_vals(result),
-                FormatCallTarget(self.fmt, target),
+                FormatCallTarget(&self.fmt, target),
                 self.fmt.io_vals(args)
             ),
             InsKind::Extract { dst, src, offset } => {
@@ -278,6 +279,10 @@ impl std::fmt::Display for MaybeTy {
 
 impl<'a> Display for ValueFmt<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(io) = self.fmt.io_to_val.get(&self.val) {
+            return write!(f, "{}", io);
+        }
+
         let val = &self.fmt.func.values[self.val];
         match val {
             Value::Invalid => write!(f, "invalid{}", self.val.id()),
@@ -341,33 +346,35 @@ impl<'a> Display for IoValuesFmt<'a> {
 
 impl<'a> FuncFmt<'a> {
     pub fn new(func: &'a SsaFunction) -> Self {
-        Self { func }
+        let io_to_val = func.inputs.iter().map(|(io, val)| (*val, *io)).collect();
+
+        Self { func, io_to_val }
     }
 
-    pub fn ins(self, ins: InsId) -> InsFmt<'a> {
+    pub fn ins(&'a self, ins: InsId) -> InsFmt<'a> {
         InsFmt { fmt: self, ins }
     }
 
-    pub fn val(self, val: ValueId) -> ValueFmt<'a> {
+    pub fn val(&'a self, val: ValueId) -> ValueFmt<'a> {
         ValueFmt { fmt: self, val }
     }
 
-    pub fn maybe_val(self, val: impl Into<Option<ValueId>>) -> MaybeValueFmt<'a> {
+    pub fn maybe_val(&'a self, val: impl Into<Option<ValueId>>) -> MaybeValueFmt<'a> {
         MaybeValueFmt {
             fmt: self,
             val: val.into(),
         }
     }
 
-    pub fn vals(self, vals: &'a [ValueId]) -> ValuesFmt<'a> {
+    pub fn vals(&'a self, vals: &'a [ValueId]) -> ValuesFmt<'a> {
         ValuesFmt { fmt: self, vals }
     }
 
-    pub fn io_vals(self, vals: &'a IoValues) -> IoValuesFmt<'a> {
+    pub fn io_vals(&'a self, vals: &'a IoValues) -> IoValuesFmt<'a> {
         IoValuesFmt { fmt: self, vals }
     }
 
-    pub fn ty(self, val: ValueId) -> TyFmt {
+    pub fn ty(&self, val: ValueId) -> TyFmt {
         TyFmt {
             ty: self.func.val_ty(val),
         }
@@ -386,7 +393,7 @@ impl<'a> Display for FuncFmt<'a> {
         let aliases = self.func.inverse_aliases();
 
         for (_, b) in self.func.blocks.iter() {
-            fmt_block(*self, &aliases, b, f)?;
+            fmt_block(self, &aliases, b, f)?;
         }
 
         Ok(())
@@ -394,7 +401,7 @@ impl<'a> Display for FuncFmt<'a> {
 }
 
 fn fmt_block(
-    fmt: FuncFmt<'_>,
+    fmt: &FuncFmt<'_>,
     aliases: &HashMap<ValueId, Vec<ValueId>>,
     block: &Block,
     f: &mut std::fmt::Formatter<'_>,
@@ -448,7 +455,7 @@ fn fmt_block(
 }
 
 fn fmt_terminator(
-    fmt: FuncFmt<'_>,
+    fmt: &FuncFmt<'_>,
     term: &Terminator,
     f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
@@ -491,7 +498,7 @@ fn fmt_terminator(
 }
 
 fn format_target(
-    fmt: FuncFmt<'_>,
+    fmt: &FuncFmt<'_>,
     f: &mut std::fmt::Formatter<'_>,
     target: &JumpTarget,
 ) -> Result<(), std::fmt::Error> {
@@ -509,7 +516,7 @@ fn format_target(
     Ok(())
 }
 
-struct FormatCallTarget<'a>(FuncFmt<'a>, &'a CallTarget);
+struct FormatCallTarget<'a>(&'a FuncFmt<'a>, &'a CallTarget);
 
 impl<'a> std::fmt::Display for FormatCallTarget<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -522,7 +529,7 @@ impl<'a> std::fmt::Display for FormatCallTarget<'a> {
 }
 
 fn maybe_fmt_alias(
-    fmt: FuncFmt<'_>,
+    fmt: &FuncFmt<'_>,
     aliases: &HashMap<ValueId, Vec<ValueId>>,
     f: &mut std::fmt::Formatter<'_>,
     result: ValueId,
