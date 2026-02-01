@@ -168,7 +168,16 @@ pub fn jump_table_to_cfg(
     table: JumpTableCandidate,
     text: SectionData<'_>,
 ) -> Option<third_cfg::JumpTable> {
-    let size = table.size.unwrap();
+    let size = match table.size {
+        Some(val) => val,
+        None => {
+            log::error!(
+                ">> Failed to detect size of jump table at {}",
+                table.ins_addr
+            );
+            return None;
+        }
+    };
     let mut entries = Vec::with_capacity(size as usize);
     for idx in 0..size {
         let target = text.read_u32_le(table.base_addr + idx * 4);
