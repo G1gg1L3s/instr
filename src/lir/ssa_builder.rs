@@ -273,8 +273,6 @@ impl SsaBuilder {
         let mut entries: Vec<(VarId, ValueId)> =
             self.incomplete_phis.remove(&block).unwrap_or_default();
 
-        entries.sort_by_key(|(var, _)| var.to_idx());
-
         let preds = self.func.blocks[block].predecessors.clone();
         for (var, phi) in entries {
             log::trace!("    - {}, phi: {}", var, phi);
