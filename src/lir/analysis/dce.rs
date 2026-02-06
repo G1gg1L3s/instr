@@ -4,7 +4,7 @@ use crate::lir::{
     analysis::def_use,
     block::Blocks,
     func::SsaFunction,
-    ins::{InsKind, TerminatorKind},
+    ins::{InsKind, JumpTarget, TerminatorKind},
     io::IoValues,
     value::{Value, ValueId},
 };
@@ -102,8 +102,9 @@ pub fn exec(func: &mut SsaFunction) {
             .ins
             .retain(|&ins_id| !matches!(func.ins[ins_id].kind, InsKind::Hole));
     }
+    log::trace!(">> Uses before transitive outputs: {uses:?}");
     remove_transitive_outputs(func, &mut uses);
-    log::trace!(">> Uses: {uses:?}");
+    log::trace!(">> Uses after transitive outputs: {uses:?}");
 
     remove_inputs_with_0_uses(func, uses);
 }
@@ -139,6 +140,9 @@ fn return_args(blocks: &mut Blocks) -> Vec<&mut IoValues> {
         .values_mut()
         .filter_map(|b| match &mut b.terminator_mut().kind {
             TerminatorKind::Ret { adjust: _, args } => Some(args),
+            TerminatorKind::Jump(JumpTarget::Tailcall {
+                pass_returns: pass, ..
+            }) => Some(pass),
             _ => None,
         })
         .collect()
@@ -175,8 +179,9 @@ fn remove_transitive_outputs(func: &mut SsaFunction, uses: &mut HashMap<ValueId,
             .expect("entry should exist because terminator has uses");
 
         for return_io_values in &mut return_args {
-            return_io_values.remove(io);
-            *uses -= 1;
+            if return_io_values.remove(io).is_some() {
+                *uses -= 1;
+            }
         }
     }
 }

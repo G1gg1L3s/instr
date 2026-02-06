@@ -3,6 +3,7 @@ use crate::{
     lir::{
         func::SsaFunction,
         ins::{CallTarget, InsKind, JumpTarget, TerminatorKind},
+        io::IoValues,
         value::{Imm, Value, Values},
     },
 };
@@ -74,5 +75,10 @@ fn promote_jump_target(
     );
 
     let args = std::mem::take(args);
-    *jump_target = JumpTarget::Tailcall { addr, args };
+    // TODO: pass should contain some default values
+    *jump_target = JumpTarget::Tailcall {
+        addr,
+        args,
+        pass_returns: IoValues::default(),
+    };
 }

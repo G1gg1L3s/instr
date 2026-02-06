@@ -824,9 +824,19 @@ impl std::fmt::Display for CallTarget {
 
 #[derive(Debug, Clone)]
 pub enum JumpTarget {
-    Known { block: BlockId, args: Vec<ValueId> },
-    Unknown { addr: ValueId, args: IoValues },
-    Tailcall { addr: Addr, args: IoValues },
+    Known {
+        block: BlockId,
+        args: Vec<ValueId>,
+    },
+    Unknown {
+        addr: ValueId,
+        args: IoValues,
+    },
+    Tailcall {
+        addr: Addr,
+        args: IoValues,
+        pass_returns: IoValues,
+    },
 }
 
 impl std::fmt::Display for JumpTarget {
@@ -834,7 +844,13 @@ impl std::fmt::Display for JumpTarget {
         match self {
             JumpTarget::Known { block, args } => write!(f, "{block}{}", FmtList(args)),
             JumpTarget::Unknown { addr: val, args } => write!(f, "?{val}({args})"),
-            JumpTarget::Tailcall { addr, args } => write!(f, "tailcall {addr}({args})"),
+            JumpTarget::Tailcall {
+                addr,
+                args,
+                pass_returns: pass,
+            } => {
+                write!(f, "tailcall {addr}({args}) pass:({pass})")
+            }
         }
     }
 }
@@ -914,8 +930,13 @@ impl Terminator {
                 callback(*addr);
                 args.values().for_each(callback);
             }
-            JumpTarget::Tailcall { addr: _, args } => {
-                args.values().for_each(callback);
+            JumpTarget::Tailcall {
+                addr: _,
+                args,
+                pass_returns: pass,
+            } => {
+                args.values().for_each(&mut callback);
+                pass.values().for_each(&mut callback);
             }
         }
     }
@@ -929,8 +950,13 @@ impl Terminator {
                 callback(addr);
                 args.values_mut().for_each(callback);
             }
-            JumpTarget::Tailcall { addr: _, args } => {
-                args.values_mut().for_each(callback);
+            JumpTarget::Tailcall {
+                addr: _,
+                args,
+                pass_returns: pass,
+            } => {
+                args.values_mut().for_each(&mut callback);
+                pass.values_mut().for_each(&mut callback);
             }
         }
     }

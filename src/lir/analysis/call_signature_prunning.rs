@@ -22,14 +22,12 @@ pub fn run(funcs: &mut [SsaFunction], entry: Addr) -> bool {
     let call_graph = build_call_graph(&funcs);
     let mut funcs = BTreeMap::from_iter(funcs.iter_mut().map(|f| (f.addr, f)));
 
-    let mut call_signatures = HashMap::new();
+    let mut call_signatures: HashMap<Addr, CallSignature> = HashMap::new();
 
     for func in DfsPostOrder::new(&call_graph, entry).iter(&call_graph) {
         let Some(func) = funcs.get_mut(&func) else {
             continue;
         };
-        let func_signature = call_signature(&call_signatures, func);
-        call_signatures.insert(func.addr, func_signature);
 
         log::trace!(">> Prunning {}", func.addr);
 
@@ -50,6 +48,8 @@ pub fn run(funcs: &mut [SsaFunction], entry: Addr) -> bool {
                 // TODO: library functions
                 continue;
             };
+
+            log::trace!(">>> Got call signature of {addr}: {call_signature}");
 
             if let Some(adjust) = call_signature.stack_adjust {
                 if !call_signature.outputs.contains(&Io::Esp) {
@@ -80,9 +80,24 @@ pub fn run(funcs: &mut [SsaFunction], entry: Addr) -> bool {
 
         for block in func.blocks.values_mut() {
             match &mut block.terminator_mut().kind {
-                TerminatorKind::Jump(JumpTarget::Tailcall { addr, args }) => {
+                TerminatorKind::Jump(JumpTarget::Tailcall {
+                    addr,
+                    args,
+                    pass_returns: pass,
+                }) => {
                     if let Some(call_signature) = call_signatures.get(addr) {
-                        args.retain(|io, _| call_signature.inputs.contains(io));
+                        log::trace!(">>> Got taillcall signature of {addr}: {call_signature}");
+
+                        args.retain(|io, val| {
+                            let inputs_contain = call_signature.inputs.contains(io);
+                            let outputs_contain = call_signature.outputs.contains(io);
+
+                            if !inputs_contain && !outputs_contain {
+                                pass.insert(*io, *val);
+                            }
+
+                            inputs_contain
+                        });
                     };
                 }
 
@@ -125,6 +140,9 @@ pub fn run(funcs: &mut [SsaFunction], entry: Addr) -> bool {
             func.values[output_esp] = Value::Alias { to: updated_esp };
             changed = true;
         }
+
+        let func_signature = call_signature(&call_signatures, func);
+        call_signatures.insert(func.addr, func_signature);
     }
 
     changed
@@ -135,6 +153,18 @@ struct CallSignature {
     inputs: HashSet<Io>,
     outputs: HashSet<Io>,
     stack_adjust: Option<u16>,
+}
+
+impl std::fmt::Display for CallSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "in:({}) out:({}), stack:{:?}",
+            AsList(&self.inputs),
+            AsList(&self.outputs),
+            self.stack_adjust
+        )
+    }
 }
 
 fn call_signature(
@@ -158,13 +188,17 @@ fn call_signature(
         };
 
         match &block.terminator().kind {
-            TerminatorKind::Jump(JumpTarget::Tailcall { addr, .. }) => {
-                let Some(call_signature) = known_call_signatures.get(addr) else {
-                    // TODO: handle library
-                    continue;
+            TerminatorKind::Jump(JumpTarget::Tailcall {
+                addr,
+                args: _,
+                pass_returns,
+            }) => {
+                if let Some(call_signature) = known_call_signatures.get(addr) {
+                    log::trace!(">>> Got call signature of {addr} as {call_signature}");
+                    outputs.extend(call_signature.outputs.iter().copied());
+                    update_stack_adjust(call_signature.stack_adjust);
                 };
-                outputs.extend(call_signature.outputs.iter().copied());
-                update_stack_adjust(call_signature.stack_adjust);
+                outputs.extend(pass_returns.keys());
             }
 
             TerminatorKind::Brif { .. } => {}
@@ -179,10 +213,30 @@ fn call_signature(
         };
     }
 
-    CallSignature {
+    let res = CallSignature {
         inputs,
         outputs,
         stack_adjust,
+    };
+
+    log::trace!(">> Computed call signature of {}: {}", succ.addr, res);
+
+    res
+}
+
+struct AsList<'a, T>(&'a HashSet<T>);
+
+impl<'a, T> std::fmt::Display for AsList<'a, T>
+where
+    T: std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut comma = "";
+        for e in self.0 {
+            write!(f, "{comma}{e}")?;
+            comma = ", ";
+        }
+        Ok(())
     }
 }
 
@@ -203,7 +257,12 @@ fn build_call_graph(funcs: &[SsaFunction]) -> DiGraphMap<Addr, ()> {
         for block in func.blocks.values() {
             match &block.terminator().kind {
                 TerminatorKind::Jump(jt) => {
-                    if let JumpTarget::Tailcall { addr, args: _ } = jt {
+                    if let JumpTarget::Tailcall {
+                        addr,
+                        args: _,
+                        pass_returns: _,
+                    } = jt
+                    {
                         res.add_edge(func.addr, *addr, ());
                     }
                 }

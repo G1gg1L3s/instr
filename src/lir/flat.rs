@@ -12,7 +12,7 @@ use crate::{
             RawSize,
         },
         ins_builder::Discard,
-        io::Io,
+        io::{Io, IoValues},
         ssa_builder::{SsaBuilder, VarId},
         ty::Ty,
         value::{Imm, ValueId},
@@ -493,7 +493,11 @@ impl<'a> BlockState<'a> {
                 }
             } else {
                 let args = self.read_io_values(&FUNC_ARGS);
-                JumpTarget::Tailcall { addr, args }
+                JumpTarget::Tailcall {
+                    addr,
+                    args,
+                    pass_returns: IoValues::default(),
+                }
             }
         } else {
             let addr = self.lower_val(*target);
