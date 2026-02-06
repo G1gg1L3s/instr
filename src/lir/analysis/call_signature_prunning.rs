@@ -86,23 +86,6 @@ pub fn run(funcs: &mut [SsaFunction], entry: Addr) -> bool {
                     };
                 }
 
-                TerminatorKind::Brif {
-                    cond: _,
-                    thenb,
-                    elseb,
-                } => {
-                    if let JumpTarget::Tailcall { addr, args } = thenb {
-                        if let Some(call_signature) = call_signatures.get(addr) {
-                            args.retain(|io, _| call_signature.inputs.contains(io));
-                        };
-                    }
-                    if let JumpTarget::Tailcall { addr, args } = elseb {
-                        if let Some(call_signature) = call_signatures.get(addr) {
-                            args.retain(|io, _| call_signature.inputs.contains(io));
-                        };
-                    }
-                }
-
                 _ => {}
             }
         }
@@ -184,25 +167,7 @@ fn call_signature(
                 update_stack_adjust(call_signature.stack_adjust);
             }
 
-            TerminatorKind::Brif {
-                cond: _,
-                thenb,
-                elseb,
-            } => {
-                if let JumpTarget::Tailcall { addr, .. } = thenb {
-                    if let Some(call_signature) = known_call_signatures.get(addr) {
-                        outputs.extend(call_signature.outputs.iter().copied());
-                        update_stack_adjust(call_signature.stack_adjust)
-                    }
-                }
-
-                if let JumpTarget::Tailcall { addr, .. } = elseb {
-                    if let Some(call_signature) = known_call_signatures.get(addr) {
-                        outputs.extend(call_signature.outputs.iter().copied());
-                        update_stack_adjust(call_signature.stack_adjust)
-                    }
-                }
-            }
+            TerminatorKind::Brif { .. } => {}
 
             TerminatorKind::Ret { adjust, args } => {
                 // TODO: outputs from unknown blocks or jumps can be larger, so we
@@ -236,25 +201,13 @@ fn build_call_graph(funcs: &[SsaFunction]) -> DiGraphMap<Addr, ()> {
         }
 
         for block in func.blocks.values() {
-            let mut process_jump_target = |jt: &JumpTarget| {
-                if let JumpTarget::Tailcall { addr, args: _ } = jt {
-                    res.add_edge(func.addr, *addr, ());
-                }
-            };
-
             match &block.terminator().kind {
                 TerminatorKind::Jump(jt) => {
-                    process_jump_target(jt);
+                    if let JumpTarget::Tailcall { addr, args: _ } = jt {
+                        res.add_edge(func.addr, *addr, ());
+                    }
                 }
 
-                TerminatorKind::Brif {
-                    cond: _,
-                    thenb,
-                    elseb,
-                } => {
-                    process_jump_target(thenb);
-                    process_jump_target(elseb);
-                }
                 _ => {}
             }
         }

@@ -4,7 +4,7 @@ use crate::lir::{
     block::Block,
     flags::FlagsGroup,
     func::SsaFunction,
-    ins::{CallTarget, InsId, InsKind, JumpTarget, Terminator, TerminatorKind},
+    ins::{BranchTarget, CallTarget, InsId, InsKind, JumpTarget, Terminator, TerminatorKind},
     io::{Io, IoValues},
     ty::Ty,
     value::{Value, ValueId},
@@ -466,11 +466,13 @@ fn fmt_terminator(
             Ok(())
         }
         TerminatorKind::Brif { cond, thenb, elseb } => {
-            write!(f, "brif {} then ", fmt.val(*cond))?;
-            format_target(fmt, f, thenb)?;
-            write!(f, " else ")?;
-            format_target(fmt, f, elseb)?;
-            Ok(())
+            write!(
+                f,
+                "brif {} then {} else {}",
+                fmt.val(*cond),
+                FormatBranchTarget(fmt, thenb),
+                FormatBranchTarget(fmt, elseb)
+            )
         }
         TerminatorKind::Ret { adjust, args } => {
             if args.len() == 0 {
@@ -514,6 +516,15 @@ fn format_target(
         }
     };
     Ok(())
+}
+
+struct FormatBranchTarget<'a, 'b>(&'a FuncFmt<'b>, &'a BranchTarget);
+
+impl<'a, 'b> std::fmt::Display for FormatBranchTarget<'a, 'b> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(fmt, branch) = self;
+        write!(f, "{}{}", branch.block, fmt.vals(&branch.args))
+    }
 }
 
 struct FormatCallTarget<'a>(&'a FuncFmt<'a>, &'a CallTarget);

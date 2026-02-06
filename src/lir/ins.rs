@@ -840,12 +840,24 @@ impl std::fmt::Display for JumpTarget {
 }
 
 #[derive(Debug, Clone)]
+pub struct BranchTarget {
+    pub block: BlockId,
+    pub args: Vec<ValueId>,
+}
+
+impl std::fmt::Display for BranchTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}({})", self.block, FmtList(&self.args))
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum TerminatorKind {
     Jump(JumpTarget),
     Brif {
         cond: ValueId,
-        thenb: JumpTarget,
-        elseb: JumpTarget,
+        thenb: BranchTarget,
+        elseb: BranchTarget,
     },
     Ret {
         adjust: u16,
@@ -893,7 +905,7 @@ impl std::fmt::Display for TerminatorKind {
 }
 
 impl Terminator {
-    fn visit_target(jp: &JumpTarget, mut callback: impl FnMut(ValueId)) {
+    fn visit_jump_target(jp: &JumpTarget, mut callback: impl FnMut(ValueId)) {
         match jp {
             JumpTarget::Known { block: _, args } => {
                 args.iter().copied().map(callback).count();
@@ -926,12 +938,12 @@ impl Terminator {
     pub fn visit_values(&self, mut callback: impl FnMut(ValueId)) {
         match &self.kind {
             TerminatorKind::Jump(jp) => {
-                Self::visit_target(jp, callback);
+                Self::visit_jump_target(jp, callback);
             }
             TerminatorKind::Brif { cond, thenb, elseb } => {
                 callback(*cond);
-                Self::visit_target(thenb, &mut callback);
-                Self::visit_target(elseb, &mut callback);
+                thenb.args.iter().for_each(|v| callback(*v));
+                elseb.args.iter().for_each(|v| callback(*v));
             }
             TerminatorKind::Ret { adjust: _, args } => {
                 args.values().for_each(callback);
@@ -953,8 +965,8 @@ impl Terminator {
             }
             TerminatorKind::Brif { cond, thenb, elseb } => {
                 callback(cond);
-                Self::visit_target_mut(thenb, &mut callback);
-                Self::visit_target_mut(elseb, &mut callback);
+                thenb.args.iter_mut().for_each(|v| callback(v));
+                elseb.args.iter_mut().for_each(|v| callback(v));
             }
             TerminatorKind::Ret { adjust: _, args } => {
                 args.values_mut().map(callback).count();
@@ -979,13 +991,8 @@ impl Terminator {
                 thenb,
                 elseb,
             } => {
-                if let JumpTarget::Known { block, args } = thenb {
-                    callback(*block, args);
-                }
-
-                if let JumpTarget::Known { block, args } = elseb {
-                    callback(*block, args);
-                }
+                callback(thenb.block, &mut thenb.args);
+                callback(elseb.block, &mut elseb.args);
             }
             TerminatorKind::Ret { .. } => {}
             TerminatorKind::JumpTable {
@@ -1009,13 +1016,8 @@ impl Terminator {
                 thenb,
                 elseb,
             } => {
-                if let JumpTarget::Known { block, args } = thenb {
-                    callback(*block, args);
-                }
-
-                if let JumpTarget::Known { block, args } = elseb {
-                    callback(*block, args);
-                }
+                callback(thenb.block, &thenb.args);
+                callback(elseb.block, &elseb.args);
             }
             TerminatorKind::Ret { .. } => {}
             TerminatorKind::JumpTable {

@@ -5,8 +5,8 @@ use crate::{
         flags::{Flag, FlagsGroup},
         func::SsaFunction,
         ins::{
-            BinOp, CallTarget, Condition, Ins, InsKind, JumpTableEntry, JumpTarget, MemSpace,
-            RawSize, Terminator, TerminatorKind, UnOp,
+            BinOp, BranchTarget, CallTarget, Condition, Ins, InsKind, JumpTableEntry, JumpTarget,
+            MemSpace, RawSize, Terminator, TerminatorKind, UnOp,
         },
         io::{Io, IoValues},
         ty::Ty,
@@ -111,12 +111,8 @@ impl<'a> InsBuilder<'a> {
                 thenb,
                 elseb,
             } => {
-                if let JumpTarget::Known { block, args: _ } = thenb {
-                    self.func.blocks[*block].predecessors.push(self.block);
-                }
-                if let JumpTarget::Known { block, args: _ } = elseb {
-                    self.func.blocks[*block].predecessors.push(self.block);
-                }
+                self.func.blocks[thenb.block].predecessors.push(self.block);
+                self.func.blocks[elseb.block].predecessors.push(self.block);
             }
             TerminatorKind::Ret { .. } => {}
             TerminatorKind::JumpTable {
@@ -138,7 +134,7 @@ impl<'a> InsBuilder<'a> {
     pub fn jump(&mut self, target: JumpTarget) {
         self.terminator(TerminatorKind::Jump(target));
     }
-    pub fn brif(&mut self, cond: ValueId, thenb: JumpTarget, elseb: JumpTarget) {
+    pub fn brif(&mut self, cond: ValueId, thenb: BranchTarget, elseb: BranchTarget) {
         self.terminator(TerminatorKind::Brif { cond, thenb, elseb });
     }
 

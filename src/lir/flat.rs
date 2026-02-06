@@ -7,7 +7,10 @@ use crate::{
         block::BlockId,
         flags::{Flag, Flags, FlagsGroup},
         func::SsaFunction,
-        ins::{BinOp, CallTarget, Condition, JumpTableEntry, JumpTarget, MemSpace, RawSize},
+        ins::{
+            BinOp, BranchTarget, CallTarget, Condition, JumpTableEntry, JumpTarget, MemSpace,
+            RawSize,
+        },
         ins_builder::Discard,
         io::Io,
         ssa_builder::{SsaBuilder, VarId},
@@ -440,7 +443,7 @@ impl<'a> BlockState<'a> {
                 self.ins().brif(cond, thenb, elseb);
             }
             flat_ir::Terminator::Jump { addr: _, target } => {
-                let target = self.lower_branch_target(target);
+                let target = self.lower_jump_target(target);
                 self.ins().jump(target);
             }
             flat_ir::Terminator::Ret {
@@ -477,7 +480,7 @@ impl<'a> BlockState<'a> {
         }
     }
 
-    fn lower_branch_target(&mut self, target: &flat_ir::Value) -> JumpTarget {
+    fn lower_jump_target(&mut self, target: &flat_ir::Value) -> JumpTarget {
         let flat_vars = std::iter::once(FlatVar::Mem)
             .chain(REGS.iter().copied().map(FlatVar::Reg))
             .collect::<heapless::Vec<_, 32>>();
@@ -496,6 +499,21 @@ impl<'a> BlockState<'a> {
             let addr = self.lower_val(*target);
             let args = self.read_io_values(&flat_vars);
             JumpTarget::Unknown { addr, args }
+        }
+    }
+
+    fn lower_branch_target(&mut self, target: &flat_ir::Value) -> BranchTarget {
+        let Some(addr) = as_u32_addr(target) else {
+            panic!("branch with unknown target: {target}")
+        };
+
+        let Some(block) = self.state.blocks.get(&addr) else {
+            panic!("branch with taillcall: {addr}")
+        };
+
+        BranchTarget {
+            block: *block,
+            args: vec![],
         }
     }
 
