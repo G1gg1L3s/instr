@@ -215,7 +215,7 @@ impl<'a> Display for InsFmt<'a> {
             } => {
                 write!(
                     f,
-                    "{} = __memcpy {} ({}, {}, {size}:{})",
+                    "{} = __memcpy {} ({}, {}, {size} x {})",
                     self.fmt.val(*dst_mem),
                     self.fmt.val(*src_mem),
                     self.fmt.val(*dst_addr),
@@ -511,7 +511,11 @@ fn format_target(
         JumpTarget::Unknown { addr, args } => {
             write!(f, "?{}({})", fmt.val(*addr), fmt.io_vals(args))?;
         }
-        JumpTarget::Tailcall { addr, args, pass_returns: pass } => {
+        JumpTarget::Tailcall {
+            addr,
+            args,
+            pass_returns: pass,
+        } => {
             write!(
                 f,
                 "tailcall {}({}) pass:({})",
