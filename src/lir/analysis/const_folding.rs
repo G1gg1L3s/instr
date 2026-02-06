@@ -12,7 +12,7 @@ pub fn run(func: &mut SsaFunction) -> bool {
     for (_, ins) in func.ins.iter_mut() {
         changed |= fold_bin_ins(ins, &mut func.values);
         changed |= fold_const_cast(ins, &mut func.values);
-        // changed |= fold_identity_operation(ins, &mut func.values);
+        changed |= fold_identity_operation(ins, &mut func.values);
     }
 
     changed
