@@ -111,7 +111,7 @@ fn main() {
 
         for func in cfg_db.functions().iter() {
             let mut ssa_func = lir::flat::func_from_flat(func, cfg_db.blocks());
-            lir::analysis::optimise(&mut ssa_func, binary.sections.rdata);
+            lir::analysis::optimise(&mut ssa_func, binary.sections.rdata, &db);
 
             let jump_tables = lir::analysis::detect_jump_tables::run(&ssa_func);
             if jump_tables.len() > 0 {
@@ -148,7 +148,7 @@ fn main() {
         }
 
         for func in ssa_functions.iter_mut() {
-            lir::analysis::optimise(func, binary.sections.rdata);
+            lir::analysis::optimise(func, binary.sections.rdata, &db);
         }
     }
 

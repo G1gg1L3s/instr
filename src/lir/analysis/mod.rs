@@ -1,4 +1,4 @@
-use crate::{SectionData, lir::func::SsaFunction};
+use crate::{SectionData, lir::func::SsaFunction, obj::ObjDatabase};
 
 pub mod bit_field_forwarding;
 pub mod call_signature_prunning;
@@ -14,7 +14,7 @@ pub mod reassociate;
 pub mod reconstruct_comp;
 pub(crate) mod reconstruct_flag_comp;
 
-pub fn optimise(func: &mut SsaFunction, rdata: SectionData<'_>) {
+pub fn optimise(func: &mut SsaFunction, rdata: SectionData<'_>, obj: &ObjDatabase) {
     func.resolve();
 
     loop {
@@ -36,7 +36,7 @@ pub fn optimise(func: &mut SsaFunction, rdata: SectionData<'_>) {
         changed |= reconstruct_flag_comp::exec(func);
         dce::exec(func);
 
-        fill_static_reads::exec(func, rdata);
+        fill_static_reads::exec(func, rdata, obj);
         promote_known_targets::run(func);
 
         if !changed {

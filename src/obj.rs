@@ -3,10 +3,16 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::{ImportTableLib, addr::Addr, string::DataStringType};
 
 #[derive(Debug, Clone)]
+pub struct Imported {
+    pub thunk: Addr,
+}
+
+#[derive(Debug, Clone)]
 pub struct ImportThunk {
     pub lib: Arc<str>,
     pub func: Arc<str>,
     pub descriptor: Addr,
+    pub vaddr: Addr,
     pub is_terminating: bool,
 }
 
@@ -27,6 +33,7 @@ pub struct ImportFuncDescriptor {
 
 #[derive(Clone)]
 pub enum ObjectTyp {
+    Imported(Imported),
     ImportThunk(ImportThunk),
     ImportLibDescriptor(ImportLibDescriptor),
     ImportFuncDescriptor(ImportFuncDescriptor),
@@ -36,6 +43,9 @@ pub enum ObjectTyp {
 impl std::fmt::Display for ObjectTyp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ObjectTyp::Imported(imported) => {
+                write!(f, "imported(thunk:{})", imported.thunk)
+            }
             ObjectTyp::ImportThunk(import_thunk) => {
                 write!(f, "import:{}/{}", import_thunk.lib, import_thunk.func)
             }
@@ -55,6 +65,7 @@ impl std::fmt::Display for ObjectTyp {
 impl std::fmt::Debug for ObjectTyp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Imported(arg) => arg.fmt(f),
             Self::ImportThunk(arg) => arg.fmt(f),
             Self::ImportLibDescriptor(arg) => arg.fmt(f),
             Self::ImportFuncDescriptor(arg) => arg.fmt(f),
@@ -80,6 +91,7 @@ impl Object {
 
     pub fn len(&self) -> usize {
         match &self.typ {
+            ObjectTyp::Imported(_) => todo!(),
             ObjectTyp::ImportThunk(_) => 4,
             ObjectTyp::ImportLibDescriptor(import_lib_descriptor) => import_lib_descriptor.size,
             ObjectTyp::ImportFuncDescriptor(import_func_descriptor) => import_func_descriptor.size,
@@ -148,13 +160,26 @@ pub fn fill_database_with_import(database: &mut ObjDatabase, lib: &ImportTableLi
             }),
         ));
 
+        // TODO: this is hack. To make further analysis easier, just assign
+        // virtual address to each imported function. The address
+        // ideally is outside of any sections.
+        let virtual_addr = Addr(thunk.target_addr.0 - 0x401000);
+
         database.insert(Object::new(
             thunk.target_addr,
             ObjectTyp::ImportThunk(ImportThunk {
                 lib: libname.clone(),
                 func: func_name.clone(),
                 descriptor: thunk.descriptor_addr,
+                vaddr: virtual_addr,
                 is_terminating: is_well_known_exit(&libname, &func_name),
+            }),
+        ));
+
+        database.insert(Object::new(
+            virtual_addr,
+            ObjectTyp::Imported(Imported {
+                thunk: thunk.target_addr,
             }),
         ));
     }
