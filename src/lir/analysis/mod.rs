@@ -12,7 +12,8 @@ pub mod fill_static_reads;
 pub mod promote_known_targets;
 pub mod reassociate;
 pub mod reconstruct_comp;
-pub(crate) mod reconstruct_flag_comp;
+pub mod reconstruct_flag_comp;
+pub mod well_known_imports;
 
 pub fn optimise(func: &mut SsaFunction, rdata: SectionData<'_>, obj: &ObjDatabase) {
     func.resolve();

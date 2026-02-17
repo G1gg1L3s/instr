@@ -93,6 +93,7 @@ fn main() {
     for lib in &binary.imports {
         obj::fill_database_with_import(&mut db, lib);
     }
+    let well_known_imports = lir::analysis::well_known_imports::WellKnownImports::new_known(&db);
 
     let mut cfg_db = third_cfg::CfgDb::new(binary.entry_point);
 
