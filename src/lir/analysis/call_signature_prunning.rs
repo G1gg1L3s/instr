@@ -8,6 +8,7 @@ use petgraph::{
 use crate::{
     addr::Addr,
     lir::{
+        analysis::well_known_imports,
         func::SsaFunction,
         ins::{BinOp, CallTarget, InsKind, JumpTarget, TerminatorKind},
         io::Io,
@@ -15,14 +16,30 @@ use crate::{
     },
 };
 
-pub fn run(funcs: &mut [SsaFunction], entry: Addr) -> bool {
+pub fn run(
+    funcs: &mut [SsaFunction],
+    well_known_imports: &well_known_imports::WellKnownImports,
+    entry: Addr,
+) -> bool {
     log::trace!("> call_signature_prunning pass");
     let mut changed = false;
 
     let call_graph = build_call_graph(&funcs);
     let mut funcs = BTreeMap::from_iter(funcs.iter_mut().map(|f| (f.addr, f)));
 
-    let mut call_signatures: HashMap<Addr, CallSignature> = HashMap::new();
+    let mut call_signatures: HashMap<Addr, CallSignature> = well_known_imports
+        .iter()
+        .map(|(addr, imported)| {
+            (
+                addr,
+                CallSignature {
+                    inputs: imported.calling_convention.inputs.clone(),
+                    outputs: imported.calling_convention.outputs.clone(),
+                    stack_adjust: Some(imported.calling_convention.stack_adjust),
+                },
+            )
+        })
+        .collect();
 
     for func in DfsPostOrder::new(&call_graph, entry).iter(&call_graph) {
         let Some(func) = funcs.get_mut(&func) else {

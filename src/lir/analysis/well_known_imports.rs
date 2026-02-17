@@ -59,6 +59,10 @@ impl WellKnownImports {
         }
         Self { imports }
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Addr, &ImportedFunction)> {
+        self.imports.iter().map(|(k, v)| (*k, v))
+    }
 }
 
 const ALL_DEFS: &str = r#"
@@ -384,7 +388,7 @@ fn stdcall(def: &str) -> (String, CallingConvention) {
 
 fn cdecl(def: &str) -> (String, CallingConvention) {
     let mut inputs = HashSet::from_iter([Io::Mem, Io::Esp]);
-    let mut outputs = inputs.clone();
+    let mut outputs = HashSet::from_iter([Io::Mem]);
 
     let parsed = match c_parse::parse_c_function_decl(def) {
         Ok(ok) => ok,

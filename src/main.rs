@@ -141,8 +141,11 @@ fn main() {
     }
 
     loop {
-        let changed =
-            lir::analysis::call_signature_prunning::run(&mut ssa_functions, cfg_db.entry());
+        let changed = lir::analysis::call_signature_prunning::run(
+            &mut ssa_functions,
+            &well_known_imports,
+            cfg_db.entry(),
+        );
 
         if !changed {
             break;
