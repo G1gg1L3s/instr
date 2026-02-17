@@ -3,12 +3,14 @@ pub struct FunctionDecl {
     pub return_type: String,
     pub name: String,
     pub params: Vec<Param>,
+    #[allow(unused)]
     pub is_variadic: bool,
 }
 
 #[derive(Debug)]
 pub struct Param {
     pub ty: String,
+    #[allow(unused)]
     pub name: String,
 }
 
