@@ -257,7 +257,7 @@ where
     }
 }
 
-fn build_call_graph(funcs: &[SsaFunction]) -> DiGraphMap<Addr, ()> {
+pub fn build_call_graph(funcs: &[SsaFunction]) -> DiGraphMap<Addr, ()> {
     let mut res = DiGraphMap::new();
     for func in funcs {
         for ins in func.ins.values() {

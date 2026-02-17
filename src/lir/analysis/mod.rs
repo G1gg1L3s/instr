@@ -13,6 +13,7 @@ pub mod promote_known_targets;
 pub mod reassociate;
 pub mod reconstruct_comp;
 pub mod reconstruct_flag_comp;
+pub mod trace_unknown;
 pub mod well_known_imports;
 
 pub fn optimise(func: &mut SsaFunction, rdata: SectionData<'_>, obj: &ObjDatabase) {

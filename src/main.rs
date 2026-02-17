@@ -164,6 +164,8 @@ fn main() {
         println!("{}", func.fmt());
     }
 
+    lir::analysis::trace_unknown::run(&ssa_functions, cfg_db.entry());
+
     lir::analysis::collect_allocations::run(&ssa_functions);
 
     println!(".funcs: # Detected {} functions", cfg_db.functions().len());
