@@ -428,6 +428,20 @@ impl std::fmt::Display for BinOp {
     }
 }
 
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnOp {
+    Sqrt,
+}
+
+impl std::fmt::Display for UnOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnOp::Sqrt => write!(f, "sqrt"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Instr {
     BinOp {
@@ -435,6 +449,12 @@ pub enum Instr {
         dst: Option<Value>,
         lhs: Value,
         rhs: Value,
+        flags: FlagxGroup,
+    },
+    UnOp {
+        op: UnOp,
+        dst: Option<Value>,
+        src: Value,
         flags: FlagxGroup,
     },
     Assign {
@@ -543,6 +563,18 @@ impl<'a> std::fmt::Display for InstrPrinter<'a> {
                     write!(f, " = {lhs} {op} {rhs}")
                 } else {
                     write!(f, ", {flags} = {lhs} {op} {rhs}")
+                }
+            }
+            Instr::UnOp { op, dst, src, flags }=> {
+               match dst {
+                    Some(dst) => write!(f, "{dst}"),
+                    None => write!(f, "_"),
+                }?;
+
+                if flags.is_empty() {
+                    write!(f, " = {op} {src}")
+                } else {
+                    write!(f, ", {flags} = {op} {src}")
                 }
             }
             Instr::Assign { dst, src } => write!(f, "{dst} = {src}"),
@@ -1447,6 +1479,18 @@ fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: 
     }
 }
 
+fn lower_funary(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: UnOp) {
+    match ins.op_count() {
+        0 => {
+            let st0 = Value::Reg(Reg::St(0));
+            ctx.emit(Instr::UnOp { op: op, dst: Some(st0), src: st0, flags: FlagxGroup::X87_C1 });
+        }
+
+        x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
+    }
+}
+
+
 fn lower_fxch(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let (lhs, rhs) = match ins.op_count() {
         1 => (Value::Reg(Reg::St(0)), Value::Reg(Reg::St(1))),
@@ -2331,6 +2375,7 @@ fn lower_ins(
         Mnemonic::Faddp => lower_fbin(ctx, ins, BinOp::Add, Fpop::Yes, FRev::No),
         
         Mnemonic::Fsub => lower_fbin(ctx, ins, BinOp::Sub, Fpop::No, FRev::No),
+        Mnemonic::Fsubp => lower_fbin(ctx, ins, BinOp::Sub, Fpop::Yes, FRev::No),
 
         Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mulu, Fpop::No, FRev::No),
 
@@ -2342,6 +2387,8 @@ fn lower_ins(
         Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp => lower_fcom(ctx, ins),
 
         Mnemonic::Fnstsw => lower_fnstsw(ctx, ins),
+
+        Mnemonic::Fsqrt => lower_funary(ctx, ins, UnOp::Sqrt),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),

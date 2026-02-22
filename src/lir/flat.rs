@@ -224,6 +224,7 @@ pub fn func_from_flat(
                 flat_ir::Instr::Unknown(_) => {
                     block_state.ins().unimplemented();
                 }
+                flat_ir::Instr::UnOp { .. } => unimplemented!(),
             }
         }
 
