@@ -416,6 +416,8 @@ pub enum BinOp {
     ShiftLeft,
     ShifRight,
     ShifArithRight,
+
+    Atan2,
 }
 
 impl std::fmt::Display for BinOp {
@@ -432,6 +434,7 @@ impl std::fmt::Display for BinOp {
             BinOp::ShiftLeft => write!(f, "<<"),
             BinOp::ShifRight => write!(f, ">>"),
             BinOp::ShifArithRight => write!(f, "a>>"),
+            BinOp::Atan2 => write!(f, "atan2"),
         }
     }
 }
@@ -1493,6 +1496,28 @@ fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: 
     }
 }
 
+fn lower_fbin_func(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
+    let (lhs, rhs) = match ins.op_count() {
+        0 => {
+            let st0 = Value::Reg(Reg::St(0));
+            let st1 = Value::Reg(Reg::St(1));
+            (st1, st0)
+        }
+        x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
+    };
+
+ 
+
+    let result = emit_bin_with_flags(ctx, op, lhs, rhs, FlagxGroup::X87_C1);
+    ctx.emit(Instr::Assign { dst: lhs, src: result });
+
+    ctx.emit(Instr::X87Pop {
+        dst: None,
+        flags: FlagxGroup::NONE,
+    });
+}
+
+
 fn lower_funary(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: UnOp, flags: FlagxGroup) {
     match ins.op_count() {
         0 => {
@@ -2415,6 +2440,8 @@ fn lower_ins(
         Mnemonic::Fdiv => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::No),
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes, FRev::No),
         Mnemonic::Fdivr => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::Yes),
+
+        Mnemonic::Fpatan => lower_fbin_func(ctx, ins, BinOp::Atan2),
 
         Mnemonic::Fxch => lower_fxch(ctx, ins),
         Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp | Mnemonic::Fucompp => lower_fcom(ctx, ins),
