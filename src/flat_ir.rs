@@ -68,6 +68,7 @@ impl std::fmt::Display for FlagxGroup {
             x if x == Self::NOCARRY => write!(f, "f:!c"),
             x if x == Self::CARRY_OVERFOW => write!(f, "f:co"),
             x if x == Self::X87_C1 => write!(f, "f:c1"),
+            x if x == Self::X87_C1_C2 => write!(f, "f:c1c2"),
             x if x == Self::X87_COM => write!(f, "f:x87com"),
             _ => {
                 write!(f, "f:")?;
@@ -95,6 +96,7 @@ impl FlagxGroup {
     pub const CARRY_OVERFOW: Self = Self(Flagx::CARRY.union(Flagx::OVERFLOW));
 
     pub const X87_C1: Self = Self(Flagx::C1);
+    pub const X87_C1_C2: Self = Self(Flagx::C1.union(Flagx::C2));
     pub const X87_COM: Self = Self(Flagx::C0.union(Flagx::C1).union(Flagx::C2).union(Flagx::C3));
 
     pub fn is_empty(self) -> bool {
@@ -432,12 +434,18 @@ impl std::fmt::Display for BinOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOp {
     Sqrt,
+    Sin,
+    Cos,
+    Abs,
 }
 
 impl std::fmt::Display for UnOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UnOp::Sqrt => write!(f, "sqrt"),
+            UnOp::Sin => write!(f, "sin"),
+            UnOp::Cos => write!(f, "cos"),
+            UnOp::Abs => write!(f, "abs"),
         }
     }
 }
@@ -1479,11 +1487,11 @@ fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: 
     }
 }
 
-fn lower_funary(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: UnOp) {
+fn lower_funary(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: UnOp, flags: FlagxGroup) {
     match ins.op_count() {
         0 => {
             let st0 = Value::Reg(Reg::St(0));
-            ctx.emit(Instr::UnOp { op: op, dst: Some(st0), src: st0, flags: FlagxGroup::X87_C1 });
+            ctx.emit(Instr::UnOp { op: op, dst: Some(st0), src: st0, flags });
         }
 
         x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
@@ -2388,7 +2396,10 @@ fn lower_ins(
 
         Mnemonic::Fnstsw => lower_fnstsw(ctx, ins),
 
-        Mnemonic::Fsqrt => lower_funary(ctx, ins, UnOp::Sqrt),
+        Mnemonic::Fsqrt => lower_funary(ctx, ins, UnOp::Sqrt, FlagxGroup::X87_C1),
+        Mnemonic::Fsin => lower_funary(ctx, ins, UnOp::Sin, FlagxGroup::X87_C1_C2),
+        Mnemonic::Fcos => lower_funary(ctx, ins, UnOp::Cos, FlagxGroup::X87_C1_C2),
+        Mnemonic::Fabs => lower_funary(ctx, ins, UnOp::Abs, FlagxGroup::X87_C1),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
