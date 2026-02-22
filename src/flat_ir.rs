@@ -2451,6 +2451,7 @@ fn lower_ins(
         Mnemonic::Fldcw => lower_fldcw(ctx, ins),
 
         Mnemonic::Fld1 => lower_fld_const(ctx, ins, 1.0),
+        Mnemonic::Fldl2e => lower_fld_const(ctx, ins, std::f64::consts::E.log2()),
 
         Mnemonic::Fsqrt => lower_funary(ctx, ins, UnOp::Sqrt, FlagxGroup::X87_C1),
         Mnemonic::Fsin => lower_funary(ctx, ins, UnOp::Sin, FlagxGroup::X87_C1_C2),
