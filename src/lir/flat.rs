@@ -815,6 +815,7 @@ fn imm_to_ssa(imm: flat_ir::Imm) -> Imm {
         flat_ir::Imm::U8(x) => Imm::U8(x),
         flat_ir::Imm::U16(x) => Imm::U16(x),
         flat_ir::Imm::U32(x) => Imm::U32(x),
+        flat_ir::Imm::F64(_) => unimplemented!(),
     }
 }
 

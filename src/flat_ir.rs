@@ -256,11 +256,12 @@ impl Vars {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Imm {
     U8(u8),
     U16(u16),
     U32(u32),
+    F64(f64),
 }
 impl Imm {
     fn new_u(val: u8, size: Size) -> Option<Self> {
@@ -285,6 +286,7 @@ impl Imm {
             Imm::U8(_) => Size::U8,
             Imm::U16(_) => Size::U16,
             Imm::U32(_) => Size::U32,
+            Imm::F64(_) => Size::F64,
         }
     }
 }
@@ -295,6 +297,7 @@ impl std::fmt::Display for Imm {
             Imm::U8(x) => write!(f, "0x{:x}", x),
             Imm::U16(x) => write!(f, "0x{:x}", x),
             Imm::U32(x) => write!(f, "0x{:x}", x),
+            Imm::F64(x) => write!(f, "{x}"),
         }
     }
 }
@@ -368,7 +371,7 @@ impl std::fmt::Display for Size {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Value {
     Reg(Reg),
     Imm(Imm),
@@ -1575,6 +1578,13 @@ fn lower_fldcw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     ctx.emit(Instr::Assign { dst: Value::X87ControlWord, src: val });
 }
 
+fn lower_fld_const(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction, constant: f64) {
+    ctx.emit(Instr::X87Push {
+        src: Value::Imm(Imm::F64(constant)),
+        flags: FlagxGroup::X87_C1,
+    })
+}
+
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
@@ -2412,6 +2422,8 @@ fn lower_ins(
         Mnemonic::Fnstsw => lower_fnstsw(ctx, ins),
         Mnemonic::Fnstcw => lower_fnstcw(ctx, ins),
         Mnemonic::Fldcw => lower_fldcw(ctx, ins),
+
+        Mnemonic::Fld1 => lower_fld_const(ctx, ins, 1.0),
 
         Mnemonic::Fsqrt => lower_funary(ctx, ins, UnOp::Sqrt, FlagxGroup::X87_C1),
         Mnemonic::Fsin => lower_funary(ctx, ins, UnOp::Sin, FlagxGroup::X87_C1_C2),
