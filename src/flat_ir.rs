@@ -1570,6 +1570,11 @@ fn lower_fnstcw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     dest.lower_store(ctx, Value::X87ControlWord);
 }
 
+fn lower_fldcw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let val = lower_operand(ctx, ins, 0).lower_load(ctx);
+    ctx.emit(Instr::Assign { dst: Value::X87ControlWord, src: val });
+}
+
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
@@ -2406,6 +2411,7 @@ fn lower_ins(
 
         Mnemonic::Fnstsw => lower_fnstsw(ctx, ins),
         Mnemonic::Fnstcw => lower_fnstcw(ctx, ins),
+        Mnemonic::Fldcw => lower_fldcw(ctx, ins),
 
         Mnemonic::Fsqrt => lower_funary(ctx, ins, UnOp::Sqrt, FlagxGroup::X87_C1),
         Mnemonic::Fsin => lower_funary(ctx, ins, UnOp::Sin, FlagxGroup::X87_C1_C2),
