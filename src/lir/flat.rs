@@ -834,6 +834,7 @@ fn op_to_ssa(op: flat_ir::BinOp) -> BinOp {
         flat_ir::BinOp::ShifArithRight => BinOp::ShifArithRight,
         flat_ir::BinOp::Atan2 => unimplemented!(),
         flat_ir::BinOp::Fscale => unimplemented!(),
+        flat_ir::BinOp::Fyl2x => unimplemented!(),
     }
 }
 

@@ -419,6 +419,7 @@ pub enum BinOp {
 
     Atan2,
     Fscale,
+    Fyl2x,
 }
 
 impl std::fmt::Display for BinOp {
@@ -437,6 +438,7 @@ impl std::fmt::Display for BinOp {
             BinOp::ShifArithRight => write!(f, "a>>"),
             BinOp::Atan2 => write!(f, "atan2"),
             BinOp::Fscale => write!(f, "fscale"),
+            BinOp::Fyl2x => write!(f, "fyl2x"),
         }
     }
 }
@@ -2466,6 +2468,7 @@ fn lower_ins(
 
         Mnemonic::Fpatan => lower_fbin_func_pop(ctx, ins, BinOp::Atan2),
         Mnemonic::Fscale => lower_fbin_func(ctx, ins, BinOp::Fscale),
+        Mnemonic::Fyl2x => lower_fbin_func_pop(ctx, ins, BinOp::Fyl2x),
 
         Mnemonic::Fxch => lower_fxch(ctx, ins),
         Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp | Mnemonic::Fucompp => lower_fcom(ctx, ins),
