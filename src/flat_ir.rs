@@ -2253,6 +2253,15 @@ impl<'a> std::fmt::Display for AsmBlockFmt<'a> {
     }
 }
 
+fn lower_int3(_ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
+    // TODO: proper terminator
+
+    Terminator::Jump {
+        addr: Addr(ins.ip32()),
+        target: Value::Imm(Imm::U32(ins.ip32())),
+    }
+}
+
 fn lower_ins(
     cfg_db: &CfgDb,
     ctx: &mut LowerCtx,
@@ -2335,6 +2344,8 @@ fn lower_ins(
 
         Mnemonic::Nop => ctx.emit(Instr::Nop),
 
+        Mnemonic::Int3 => return Some(lower_int3(ctx, ins)),
+
         #[cfg(feature = "unknown-ins")]
         _ => ctx.emit(Instr::Unknown(*ins)),
 
@@ -2390,5 +2401,33 @@ pub fn lower_block(cfg_db: &CfgDb, code: &[u8], block_addr: Addr) -> Block {
             next: Addr(decoder.ip() as _),
         },
         size: code.len() as _,
+    }
+}
+
+pub enum BlockOrPadding {
+    Block(Block),
+    Padding { next: Addr },
+}
+
+pub fn lower_maybe_block(cfg_db: &CfgDb, code: &[u8], block_addr: Addr) -> BlockOrPadding {
+    let mut decoder = iced_x86::Decoder::with_ip(
+        32,
+        code,
+        block_addr.0.into(),
+        iced_x86::DecoderOptions::NONE,
+    );
+
+    let first = decoder.decode();
+    if first.mnemonic() == Mnemonic::Int3 {
+        loop {
+            let decoded = decoder.decode();
+            if decoded.mnemonic() != Mnemonic::Int3 {
+                break BlockOrPadding::Padding {
+                    next: Addr(decoded.ip32()),
+                };
+            }
+        }
+    } else {
+        BlockOrPadding::Block(lower_block(cfg_db, code, block_addr))
     }
 }

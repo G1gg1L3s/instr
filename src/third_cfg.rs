@@ -138,6 +138,93 @@ pub fn walk_code_blocks(db: &CfgDb, text: SectionData<'_>) -> BTreeMap<Addr, Blo
     blocks
 }
 
+pub fn walk_code_blocks_on_section(db: &CfgDb, text: SectionData<'_>) -> BTreeMap<Addr, Block> {
+    let mut to_visit = vec![text.address, db.entry];
+    let mut block_starts = BTreeSet::from_iter([text.address, db.entry]);
+
+    let mut blocks = BTreeMap::<Addr, Block>::new();
+
+    while let Some(addr) = to_visit.pop() {
+        if blocks.contains_key(&addr) {
+            continue;
+        }
+
+        if let Some((&overlapping, block)) = blocks.range(..=addr).next_back()
+            && block.contains(addr)
+        {
+            blocks.remove(&overlapping);
+            to_visit.push(overlapping);
+        }
+
+        let code = if let Some(next) = block_starts.range(addr..).nth(1) {
+            let size = next.0 - addr.0;
+            text.slice(addr, size as _)
+        } else {
+            text.slice_to_end(addr)
+        };
+
+        let block = match flat_ir::lower_maybe_block(db, code, addr) {
+            flat_ir::BlockOrPadding::Block(block) => block,
+            flat_ir::BlockOrPadding::Padding { next } => {
+                to_visit.push(next);
+                block_starts.insert(next);
+                continue;
+            }
+        };
+
+        match block.terminator() {
+            flat_ir::Terminator::Cond {
+                then_bb, else_bb, ..
+            } => {
+                if let Value::Imm(Imm::U32(u32)) = then_bb {
+                    to_visit.push(Addr(*u32));
+                    block_starts.insert(Addr(*u32));
+                }
+                if let Value::Imm(Imm::U32(u32)) = else_bb {
+                    to_visit.push(Addr(*u32));
+                    block_starts.insert(Addr(*u32));
+                }
+            }
+            flat_ir::Terminator::Jump { target, .. } => {
+                if let Value::Imm(Imm::U32(u32)) = target {
+                    to_visit.push(Addr(*u32));
+                    block_starts.insert(Addr(*u32));
+                }
+            }
+            flat_ir::Terminator::Ret { .. } => {
+                let next_block = block.addr() + block.len_u32();
+                to_visit.push(next_block);
+                block_starts.insert(next_block);
+            }
+            flat_ir::Terminator::Fallthrough { next } => {
+                to_visit.push(*next);
+                block_starts.insert(*next);
+            }
+            flat_ir::Terminator::JumpTable {
+                addr: _,
+                jump_addr: _,
+                entries,
+            } => {
+                to_visit.extend(entries);
+                block_starts.extend(entries);
+            }
+        }
+
+        for ins in block.instr() {
+            if let flat_ir::Instr::Call {
+                target: Value::Imm(Imm::U32(addr)),
+            } = &ins.ins
+            {
+                to_visit.push(Addr(*addr));
+                block_starts.insert(Addr(*addr));
+            }
+        }
+
+        blocks.insert(block.addr(), block);
+    }
+    blocks
+}
+
 pub struct Function {
     addr: Addr,
     blocks: Vec<Addr>,

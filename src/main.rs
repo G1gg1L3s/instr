@@ -99,6 +99,9 @@ fn main() {
 
     let mut ssa_functions = vec![];
 
+    log::trace!("> Walking code blocks...");
+    let blocks = third_cfg::walk_code_blocks_on_section(&cfg_db, binary.sections.text);
+
     loop {
         log::trace!("> Walking code blocks...");
         let blocks = third_cfg::walk_code_blocks(&cfg_db, binary.sections.text);
