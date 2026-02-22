@@ -1542,7 +1542,7 @@ fn lower_fcom(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
                 flags: FlagxGroup::NONE,
             });
         }
-        Mnemonic::Fcompp => {
+        Mnemonic::Fcompp | Mnemonic::Fucompp => {
             ctx.emit(Instr::X87Pop {
                 dst: None,
                 flags: FlagxGroup::NONE,
@@ -2384,6 +2384,7 @@ fn lower_ins(
         
         Mnemonic::Fsub => lower_fbin(ctx, ins, BinOp::Sub, Fpop::No, FRev::No),
         Mnemonic::Fsubp => lower_fbin(ctx, ins, BinOp::Sub, Fpop::Yes, FRev::No),
+        Mnemonic::Fsubr => lower_fbin(ctx, ins, BinOp::Sub, Fpop::No, FRev::Yes),
 
         Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mulu, Fpop::No, FRev::No),
 
@@ -2392,7 +2393,7 @@ fn lower_ins(
         Mnemonic::Fdivr => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::Yes),
 
         Mnemonic::Fxch => lower_fxch(ctx, ins),
-        Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp => lower_fcom(ctx, ins),
+        Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp | Mnemonic::Fucompp => lower_fcom(ctx, ins),
 
         Mnemonic::Fnstsw => lower_fnstsw(ctx, ins),
 
