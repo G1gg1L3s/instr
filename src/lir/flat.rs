@@ -335,6 +335,7 @@ impl<'a> BlockState<'a> {
                 };
                 self.ins().x87status_word(flags_val)
             }
+            flat_ir::Value::X87ControlWord => unimplemented!(),
         }
     }
 
@@ -353,6 +354,7 @@ impl<'a> BlockState<'a> {
             flat_ir::Value::Temp(temp_id) => FlatVar::Temp(temp_id),
             flat_ir::Value::Flag(_flag) => todo!(),
             flat_ir::Value::X87StatusWord => todo!(),
+            flat_ir::Value::X87ControlWord => todo!(),
         };
 
         let var = self.get_var(var);
@@ -562,6 +564,7 @@ impl<'a> BlockState<'a> {
             }
             flat_ir::Value::Flag(_) => Ty::Bool,
             flat_ir::Value::X87StatusWord => todo!(),
+            flat_ir::Value::X87ControlWord => todo!(),
         }
     }
 

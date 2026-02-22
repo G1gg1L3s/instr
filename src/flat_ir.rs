@@ -251,6 +251,7 @@ impl Vars {
             Value::Temp(temp) => self.temp(temp).size,
             Value::Flag(_) => Size::U1,
             Value::X87StatusWord => Size::U16,
+            Value::X87ControlWord => Size::U16,
         }
     }
 }
@@ -374,6 +375,7 @@ pub enum Value {
     Temp(TempId),
     Flag(Flag),
     X87StatusWord,
+    X87ControlWord,
 }
 
 impl std::fmt::Display for Value {
@@ -384,6 +386,7 @@ impl std::fmt::Display for Value {
             Value::Temp(x) => write!(f, "{x}"),
             Value::Flag(flag) => write!(f, "{flag}"),
             Value::X87StatusWord => write!(f, "__x87_status_word"),
+            Value::X87ControlWord => write!(f, "__x87_control_word"),
         }
     }
 }
@@ -1561,6 +1564,12 @@ fn lower_fnstsw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     dest.lower_store(ctx, Value::X87StatusWord);
 }
 
+
+fn lower_fnstcw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let dest = lower_operand(ctx, ins, 0);
+    dest.lower_store(ctx, Value::X87ControlWord);
+}
+
 #[derive(Debug, Clone)]
 pub enum Terminator {
     Cond {
@@ -2396,6 +2405,7 @@ fn lower_ins(
         Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp | Mnemonic::Fucompp => lower_fcom(ctx, ins),
 
         Mnemonic::Fnstsw => lower_fnstsw(ctx, ins),
+        Mnemonic::Fnstcw => lower_fnstcw(ctx, ins),
 
         Mnemonic::Fsqrt => lower_funary(ctx, ins, UnOp::Sqrt, FlagxGroup::X87_C1),
         Mnemonic::Fsin => lower_funary(ctx, ins, UnOp::Sin, FlagxGroup::X87_C1_C2),
