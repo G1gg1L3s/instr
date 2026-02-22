@@ -2328,6 +2328,10 @@ fn lower_ins(
         Mnemonic::Fstp => lower_fst(ctx, ins, Fpop::Yes),
 
         Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add, Fpop::No, FRev::No),
+        Mnemonic::Faddp => lower_fbin(ctx, ins, BinOp::Add, Fpop::Yes, FRev::No),
+        
+        Mnemonic::Fsub => lower_fbin(ctx, ins, BinOp::Sub, Fpop::No, FRev::No),
+
         Mnemonic::Fmul => lower_fbin(ctx, ins, BinOp::Mulu, Fpop::No, FRev::No),
 
         Mnemonic::Fdiv => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::No),

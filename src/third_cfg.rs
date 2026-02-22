@@ -220,6 +220,9 @@ pub fn walk_code_blocks_on_section(db: &CfgDb, text: SectionData<'_>) -> BTreeMa
             }
         }
 
+        println!("=== block {}", block.addr());
+        println!("{}", block.asm_fmt(code));
+
         blocks.insert(block.addr(), block);
     }
     blocks
