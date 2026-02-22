@@ -418,6 +418,7 @@ pub enum BinOp {
     ShifArithRight,
 
     Atan2,
+    Fscale,
 }
 
 impl std::fmt::Display for BinOp {
@@ -435,6 +436,7 @@ impl std::fmt::Display for BinOp {
             BinOp::ShifRight => write!(f, ">>"),
             BinOp::ShifArithRight => write!(f, "a>>"),
             BinOp::Atan2 => write!(f, "atan2"),
+            BinOp::Fscale => write!(f, "fscale"),
         }
     }
 }
@@ -446,6 +448,8 @@ pub enum UnOp {
     Sin,
     Cos,
     Abs,
+    RoundInt,
+    F2xm1,
 }
 
 impl std::fmt::Display for UnOp {
@@ -455,6 +459,8 @@ impl std::fmt::Display for UnOp {
             UnOp::Sin => write!(f, "sin"),
             UnOp::Cos => write!(f, "cos"),
             UnOp::Abs => write!(f, "abs"),
+            UnOp::RoundInt => write!(f, "rount_int"),
+            UnOp::F2xm1 => write!(f, "__2xm1"),
         }
     }
 }
@@ -1496,7 +1502,7 @@ fn lower_fbin(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp, fpop: 
     }
 }
 
-fn lower_fbin_func(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
+fn lower_fbin_func_pop(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
     let (lhs, rhs) = match ins.op_count() {
         0 => {
             let st0 = Value::Reg(Reg::St(0));
@@ -1515,6 +1521,22 @@ fn lower_fbin_func(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
         dst: None,
         flags: FlagxGroup::NONE,
     });
+}
+
+fn lower_fbin_func(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
+    let (lhs, rhs) = match ins.op_count() {
+        0 => {
+            let st0 = Value::Reg(Reg::St(0));
+            let st1 = Value::Reg(Reg::St(1));
+            (st0, st1)
+        }
+        x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
+    };
+
+ 
+
+    let result = emit_bin_with_flags(ctx, op, lhs, rhs, FlagxGroup::X87_C1);
+    ctx.emit(Instr::Assign { dst: lhs, src: result });
 }
 
 
@@ -2442,7 +2464,8 @@ fn lower_ins(
         Mnemonic::Fdivp => lower_fbin(ctx, ins, BinOp::Div, Fpop::Yes, FRev::No),
         Mnemonic::Fdivr => lower_fbin(ctx, ins, BinOp::Div, Fpop::No, FRev::Yes),
 
-        Mnemonic::Fpatan => lower_fbin_func(ctx, ins, BinOp::Atan2),
+        Mnemonic::Fpatan => lower_fbin_func_pop(ctx, ins, BinOp::Atan2),
+        Mnemonic::Fscale => lower_fbin_func(ctx, ins, BinOp::Fscale),
 
         Mnemonic::Fxch => lower_fxch(ctx, ins),
         Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp | Mnemonic::Fucompp => lower_fcom(ctx, ins),
@@ -2458,6 +2481,8 @@ fn lower_ins(
         Mnemonic::Fsin => lower_funary(ctx, ins, UnOp::Sin, FlagxGroup::X87_C1_C2),
         Mnemonic::Fcos => lower_funary(ctx, ins, UnOp::Cos, FlagxGroup::X87_C1_C2),
         Mnemonic::Fabs => lower_funary(ctx, ins, UnOp::Abs, FlagxGroup::X87_C1),
+        Mnemonic::Frndint => lower_funary(ctx, ins, UnOp::RoundInt, FlagxGroup::X87_C1),
+        Mnemonic::F2xm1 => lower_funary(ctx, ins, UnOp::F2xm1, FlagxGroup::X87_C1),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
