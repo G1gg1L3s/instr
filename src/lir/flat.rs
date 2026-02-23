@@ -305,8 +305,9 @@ impl<'a> BlockState<'a> {
                 let var = self.get_var(FlatVar::Temp(temp_id));
                 self.state.builder.read_var(var)
             }
-            flat_ir::Value::Flag(flag) => {
-                let ssa_flag = flag_to_ssa(flag);
+            #[allow(unused)]
+            flat_ir::Value::Flags(cond) => {
+                let ssa_flag = flag_to_ssa(todo!());
                 let flags = self.get_flags_var(ssa_flag.to_flags());
                 let flags_val = self.state.builder.read_var(flags);
                 let ty = self.state.builder.func.val_ty(flags_val);
@@ -352,7 +353,7 @@ impl<'a> BlockState<'a> {
             flat_ir::Value::Reg(reg) => FlatVar::Reg(reg),
             flat_ir::Value::Imm(_imm) => unreachable!(),
             flat_ir::Value::Temp(temp_id) => FlatVar::Temp(temp_id),
-            flat_ir::Value::Flag(_flag) => todo!(),
+            flat_ir::Value::Flags(_) => todo!(),
             flat_ir::Value::X87StatusWord => todo!(),
             flat_ir::Value::X87ControlWord => todo!(),
         };
@@ -562,7 +563,7 @@ impl<'a> BlockState<'a> {
                 let temp = self.flat_block.temp(temp_id);
                 size_to_ssa(temp.size)
             }
-            flat_ir::Value::Flag(_) => Ty::Bool,
+            flat_ir::Value::Flags(_) => Ty::Bool,
             flat_ir::Value::X87StatusWord => todo!(),
             flat_ir::Value::X87ControlWord => todo!(),
         }

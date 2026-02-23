@@ -181,6 +181,26 @@ pub enum Flag {
     Of,
 }
 
+impl Flag {
+    pub fn to_pos_condition(self) -> Condition {
+        match self {
+            Flag::Cf => Condition::UnsignedLess,
+            Flag::Zf => Condition::Equal,
+            Flag::Sf => Condition::Negative,
+            Flag::Of => Condition::Overflow,
+        }
+    }
+
+    pub fn to_neg_condition(self) -> Condition {
+        match self {
+            Flag::Cf => Condition::UnsignedGreaterEqual,
+            Flag::Zf => Condition::NotEqual,
+            Flag::Sf => Condition::Positive,
+            Flag::Of => Condition::NoOverflow,
+        }
+    }
+}
+
 impl std::fmt::Display for Flag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -249,7 +269,7 @@ impl Vars {
             Value::Reg(reg) => reg.size(),
             Value::Imm(imm) => imm.size(),
             Value::Temp(temp) => self.temp(temp).size,
-            Value::Flag(_) => Size::U1,
+            Value::Flags(_) => Size::U1,
             Value::X87StatusWord => Size::U16,
             Value::X87ControlWord => Size::U16,
         }
@@ -376,7 +396,7 @@ pub enum Value {
     Reg(Reg),
     Imm(Imm),
     Temp(TempId),
-    Flag(Flag),
+    Flags(Condition),
     X87StatusWord,
     X87ControlWord,
 }
@@ -387,7 +407,7 @@ impl std::fmt::Display for Value {
             Value::Reg(reg) => write!(f, "{reg}"),
             Value::Imm(x) => write!(f, "{x}"),
             Value::Temp(x) => write!(f, "{x}"),
-            Value::Flag(flag) => write!(f, "{flag}"),
+            Value::Flags(condition) => write!(f, "f:{condition}"),
             Value::X87StatusWord => write!(f, "__x87_status_word"),
             Value::X87ControlWord => write!(f, "__x87_control_word"),
         }
@@ -1415,17 +1435,11 @@ fn lower_test(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
-fn lower_sete_setne(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+
+fn lower_set_flag(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, cond: Condition) {
     let lhs = lower_operand(ctx, ins, 0);
-
-    let src = if ins.mnemonic() == Mnemonic::Sete {
-        Value::Flag(Flag::Zf)
-    } else {
-        emit_not(ctx, Value::Flag(Flag::Zf))
-    };
-
     let tmp = ctx.new_temp(Size::U8);
-    ctx.emit(Instr::Convert { dst: tmp, src });
+    ctx.emit(Instr::Convert { dst: tmp, src: Value::Flags(cond) });
     lhs.lower_store(ctx, tmp);
 }
 
@@ -1927,10 +1941,13 @@ fn lower_leave(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction) {
 }
 
 fn lower_flag_as_int(ctx: &mut LowerCtx, flag: Flag, size: Size) -> Value {
+
+    let cond = flag.to_pos_condition();
+
     let tmp = ctx.new_temp(size);
     ctx.emit(Instr::Convert {
         dst: tmp,
-        src: Value::Flag(flag),
+        src: Value::Flags(cond),
     });
     tmp
 }
@@ -2180,12 +2197,6 @@ fn lower_movs(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         dst: ecx,
         src: Value::Imm(Imm::U32(0)),
     });
-}
-
-fn emit_not(ctx: &mut LowerCtx, src: Value) -> Value {
-    let res = ctx.new_temp(Size::U1);
-    ctx.emit(Instr::Not { dst: res, src });
-    res
 }
 
 fn emit_bin(ctx: &mut LowerCtx, op: BinOp, lhs: Value, rhs: Value) -> Value {
@@ -2452,7 +2463,9 @@ fn lower_ins(
 
         Mnemonic::Ret => return Some(lower_ret(ctx, ins)),
 
-        Mnemonic::Sete | Mnemonic::Setne => lower_sete_setne(ctx, ins),
+        Mnemonic::Sete => lower_set_flag(ctx, ins, Condition::Equal),
+        Mnemonic::Setne => lower_set_flag(ctx, ins, Condition::NotEqual),
+        Mnemonic::Setg => lower_set_flag(ctx, ins, Condition::SignedGreater),
 
         Mnemonic::Fld | Mnemonic::Fild => lower_fld(ctx, ins),
 
