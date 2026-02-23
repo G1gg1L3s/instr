@@ -483,6 +483,7 @@ impl std::fmt::Display for BinOp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOp {
+    Neg,
     Sqrt,
     Sin,
     Cos,
@@ -494,6 +495,7 @@ pub enum UnOp {
 impl std::fmt::Display for UnOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            UnOp::Neg => write!(f, "neg"),
             UnOp::Sqrt => write!(f, "sqrt"),
             UnOp::Sin => write!(f, "sin"),
             UnOp::Cos => write!(f, "cos"),
@@ -2590,6 +2592,7 @@ fn lower_ins(
         Mnemonic::Fabs => lower_funary(ctx, ins, UnOp::Abs, FlagxGroup::X87_C1),
         Mnemonic::Frndint => lower_funary(ctx, ins, UnOp::RoundInt, FlagxGroup::X87_C1),
         Mnemonic::F2xm1 => lower_funary(ctx, ins, UnOp::F2xm1, FlagxGroup::X87_C1),
+        Mnemonic::Fchs => lower_funary(ctx, ins, UnOp::Neg, FlagxGroup::X87_C1),
 
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
