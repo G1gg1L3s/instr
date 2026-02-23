@@ -92,10 +92,7 @@ impl std::fmt::Display for FlagxGroup {
             x if x == Self::X87_C1_C2 => write!(f, "f:c1c2"),
             x if x == Self::X87_COM => write!(f, "f:x87com"),
             _ => {
-                write!(f, "f:")?;
-                for flag in self.0 {
-                    write!(f, "{:?}", flag)?;
-                }
+                write!(f, "f:{}", self.0)?;
                 Ok(())
             }
         }
@@ -111,6 +108,13 @@ impl FlagxGroup {
             .union(Flagx::SIGN)
             .union(Flagx::OVERFLOW)
             .union(Flagx::PARITY),
+    );
+
+    pub const ZSO_X87_C0: Self = Self(
+        Flagx::CARRY
+            .union(Flagx::ZERO)
+            .union(Flagx::SIGN)
+            .union(Flagx::C0),
     );
 
     pub const NOCARRY: Self = Self(Self::ALL.0.difference(Flagx::CARRY));
@@ -1682,6 +1686,21 @@ fn lower_fcom(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     }
 }
 
+fn lower_fcomi(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, fpop: Fpop) {
+    let lhs = lower_operand(ctx, ins, 0);
+    let lhs_val = lhs.lower_load(ctx);
+    let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
+
+    emit_bin_with_flags(ctx, BinOp::Sub, lhs_val, rhs, FlagxGroup::ZSO_X87_C0);
+
+    if let Fpop::Yes = fpop {
+        ctx.emit(Instr::X87Pop {
+            dst: None,
+            flags: FlagxGroup::NONE,
+        });
+    }
+}
+
 fn lower_fnstsw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let dest = lower_operand(ctx, ins, 0);
     dest.lower_store(ctx, Value::X87StatusWord);
@@ -2577,6 +2596,7 @@ fn lower_ins(
 
         Mnemonic::Fxch => lower_fxch(ctx, ins),
         Mnemonic::Fcom | Mnemonic::Fcomp | Mnemonic::Fcompp | Mnemonic::Fucompp => lower_fcom(ctx, ins),
+        Mnemonic::Fcomi => lower_fcomi(ctx, ins, Fpop::No),
 
         Mnemonic::Fnstsw => lower_fnstsw(ctx, ins),
         Mnemonic::Fnstcw => lower_fnstcw(ctx, ins),
