@@ -1433,17 +1433,8 @@ fn lower_shift(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
     let lhs = dst_operand.lower_load(ctx);
     let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
 
-    // Mask shift count: x86 masks by 0x1F for 32-bit operands
-    let rhs_size = ctx.size(rhs);
-    let masked_count = emit_bin(
-        ctx,
-        BinOp::BitAnd,
-        rhs,
-        Value::Imm(Imm::new_u(0x1F, rhs_size).unwrap()),
-    );
-
-    // Size is unchecked because rhs is always u8
-    let result = emit_bin_with_flags_unchecked_size(ctx, op, lhs, masked_count, FlagxGroup::ALL);
+    // Size is unchecked because rhs is not the same as lhs
+    let result = emit_bin_with_flags_unchecked_size(ctx, op, lhs, rhs, FlagxGroup::ALL);
     dst_operand.lower_store(ctx, result);
 }
 
