@@ -1438,6 +1438,13 @@ fn lower_fld(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     })
 }
 
+fn lower_fist(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let dest = lower_operand(ctx, ins, 0);
+    // TODO: may have flags
+    let value = emit_convert(ctx, Value::Reg(Reg::St(0)), dest.size());
+    dest.lower_store(ctx, value);
+}
+
 fn lower_fst(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, fpop: Fpop) {
     let dest = lower_operand(ctx, ins, 0);
 
@@ -2448,6 +2455,8 @@ fn lower_ins(
         Mnemonic::Sete | Mnemonic::Setne => lower_sete_setne(ctx, ins),
 
         Mnemonic::Fld | Mnemonic::Fild => lower_fld(ctx, ins),
+
+        Mnemonic::Fist => lower_fist(ctx, ins),
 
         Mnemonic::Fst => lower_fst(ctx, ins, Fpop::No),
         Mnemonic::Fstp => lower_fst(ctx, ins, Fpop::Yes),
