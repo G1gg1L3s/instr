@@ -1490,11 +1490,19 @@ fn lower_fld(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     })
 }
 
-fn lower_fist(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
-    let dest = lower_operand(ctx, ins, 0);
-    // TODO: may have flags
-    let value = emit_convert(ctx, Value::Reg(Reg::St(0)), dest.size());
-    dest.lower_store(ctx, value);
+fn lower_fist(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, fpop: Fpop) {
+    let value = if let Fpop::Yes = fpop {
+        let dst = ctx.new_temp(Size::F64);
+        ctx.emit(Instr::X87Pop {
+            dst: Some(dst),
+            flags: FlagxGroup::X87_C1,
+        });
+        dst
+    } else {
+        Value::Reg(Reg::St(0))
+    };
+
+    lower_operand(ctx, ins, 0).lower_store(ctx, value);
 }
 
 fn lower_fst(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, fpop: Fpop) {
@@ -2521,7 +2529,8 @@ fn lower_ins(
 
         Mnemonic::Fld | Mnemonic::Fild => lower_fld(ctx, ins),
 
-        Mnemonic::Fist => lower_fist(ctx, ins),
+        Mnemonic::Fist => lower_fist(ctx, ins, Fpop::No),
+        Mnemonic::Fistp => lower_fist(ctx, ins, Fpop::Yes),
 
         Mnemonic::Fst => lower_fst(ctx, ins, Fpop::No),
         Mnemonic::Fstp => lower_fst(ctx, ins, Fpop::Yes),
