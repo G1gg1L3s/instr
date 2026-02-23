@@ -58,6 +58,27 @@ bitflags::bitflags! {
     }
 }
 
+impl std::fmt::Display for Flagx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (flag, fmt) in [
+            (Flagx::CARRY, "c"),
+            (Flagx::ZERO, "z"),
+            (Flagx::SIGN, "s"),
+            (Flagx::OVERFLOW, "o"),
+            (Flagx::PARITY, "p"),
+            (Flagx::C0, "c0"),
+            (Flagx::C1, "c1"),
+            (Flagx::C2, "c2"),
+            (Flagx::C3, "c3"),
+        ] {
+            if self.contains(flag) {
+                write!(f, "{fmt}")?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FlagxGroup(Flagx);
 
@@ -463,7 +484,6 @@ impl std::fmt::Display for BinOp {
     }
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOp {
     Sqrt,
@@ -520,9 +540,15 @@ pub enum Instr {
         target: Value,
     },
 
+    // TODO: move to unop
     Not {
         dst: Value,
         src: Value,
+    },
+
+    Condition {
+        dst: Value,
+        condition: Condition,
     },
 
     SliceBytes {
@@ -610,8 +636,13 @@ impl<'a> std::fmt::Display for InstrPrinter<'a> {
                     write!(f, ", {flags} = {lhs} {op} {rhs}")
                 }
             }
-            Instr::UnOp { op, dst, src, flags }=> {
-               match dst {
+            Instr::UnOp {
+                op,
+                dst,
+                src,
+                flags,
+            } => {
+                match dst {
                     Some(dst) => write!(f, "{dst}"),
                     None => write!(f, "_"),
                 }?;
@@ -643,6 +674,10 @@ impl<'a> std::fmt::Display for InstrPrinter<'a> {
                 write!(f, "call {target}")
             }
             Instr::Not { dst, src } => write!(f, "{dst} = not {src}"),
+            Instr::Condition { dst, condition } => {
+                let flags = condition.required_flags();
+                write!(f, "{dst} = cond {condition} {{{}}}", flags)
+            }
             Instr::SliceBytes { dst, src, start } => {
                 let end = u32::from(*start) + self.vars.size(*dst).to_bytes().unwrap();
 
@@ -1435,11 +1470,14 @@ fn lower_test(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     });
 }
 
-
 fn lower_set_flag(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, cond: Condition) {
     let lhs = lower_operand(ctx, ins, 0);
+    let condition = emit_condition(ctx, cond);
     let tmp = ctx.new_temp(Size::U8);
-    ctx.emit(Instr::Convert { dst: tmp, src: Value::Flags(cond) });
+    ctx.emit(Instr::Convert {
+        dst: tmp,
+        src: condition,
+    });
     lhs.lower_store(ctx, tmp);
 }
 
@@ -1535,10 +1573,11 @@ fn lower_fbin_func_pop(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinO
         x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
     };
 
- 
-
     let result = emit_bin_with_flags(ctx, op, lhs, rhs, FlagxGroup::X87_C1);
-    ctx.emit(Instr::Assign { dst: lhs, src: result });
+    ctx.emit(Instr::Assign {
+        dst: lhs,
+        src: result,
+    });
 
     ctx.emit(Instr::X87Pop {
         dst: None,
@@ -1556,24 +1595,28 @@ fn lower_fbin_func(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: BinOp) {
         x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
     };
 
- 
-
     let result = emit_bin_with_flags(ctx, op, lhs, rhs, FlagxGroup::X87_C1);
-    ctx.emit(Instr::Assign { dst: lhs, src: result });
+    ctx.emit(Instr::Assign {
+        dst: lhs,
+        src: result,
+    });
 }
-
 
 fn lower_funary(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: UnOp, flags: FlagxGroup) {
     match ins.op_count() {
         0 => {
             let st0 = Value::Reg(Reg::St(0));
-            ctx.emit(Instr::UnOp { op: op, dst: Some(st0), src: st0, flags });
+            ctx.emit(Instr::UnOp {
+                op: op,
+                dst: Some(st0),
+                src: st0,
+                flags,
+            });
         }
 
         x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
     }
 }
-
 
 fn lower_fxch(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let (lhs, rhs) = match ins.op_count() {
@@ -1637,7 +1680,6 @@ fn lower_fnstsw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     dest.lower_store(ctx, Value::X87StatusWord);
 }
 
-
 fn lower_fnstcw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let dest = lower_operand(ctx, ins, 0);
     dest.lower_store(ctx, Value::X87ControlWord);
@@ -1645,7 +1687,10 @@ fn lower_fnstcw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
 
 fn lower_fldcw(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let val = lower_operand(ctx, ins, 0).lower_load(ctx);
-    ctx.emit(Instr::Assign { dst: Value::X87ControlWord, src: val });
+    ctx.emit(Instr::Assign {
+        dst: Value::X87ControlWord,
+        src: val,
+    });
 }
 
 fn lower_fld_const(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction, constant: f64) {
@@ -1659,7 +1704,7 @@ fn lower_fld_const(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction, constant: f
 pub enum Terminator {
     Cond {
         addr: Addr,
-        cond: Condition,
+        cond: Value,
         then_bb: Value,
         else_bb: Value,
     },
@@ -1750,6 +1795,8 @@ fn lower_jmp_x(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) -> Terminator {
 
         _ => panic!("unknown ins: {ins}"),
     };
+
+    let cond = emit_condition(ctx, cond);
 
     Terminator::Cond {
         addr: Addr(ins.ip32()),
@@ -1941,7 +1988,6 @@ fn lower_leave(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction) {
 }
 
 fn lower_flag_as_int(ctx: &mut LowerCtx, flag: Flag, size: Size) -> Value {
-
     let cond = flag.to_pos_condition();
 
     let tmp = ctx.new_temp(size);
@@ -2255,6 +2301,12 @@ fn emit_convert(ctx: &mut LowerCtx, value: Value, size: Size) -> Value {
     }
 }
 
+fn emit_condition(ctx: &mut LowerCtx, condition: Condition) -> Value {
+    let dst = ctx.new_temp(Size::U1);
+    ctx.emit(Instr::Condition { dst, condition });
+    dst
+}
+
 #[derive(Debug)]
 pub struct Block {
     addr: Addr,
@@ -2476,7 +2528,7 @@ fn lower_ins(
 
         Mnemonic::Fadd => lower_fbin(ctx, ins, BinOp::Add, Fpop::No, FRev::No),
         Mnemonic::Faddp => lower_fbin(ctx, ins, BinOp::Add, Fpop::Yes, FRev::No),
-        
+
         Mnemonic::Fsub | Mnemonic::Fisub => lower_fbin(ctx, ins, BinOp::Sub, Fpop::No, FRev::No),
         Mnemonic::Fsubp => lower_fbin(ctx, ins, BinOp::Sub, Fpop::Yes, FRev::No),
         Mnemonic::Fsubr => lower_fbin(ctx, ins, BinOp::Sub, Fpop::No, FRev::Yes),

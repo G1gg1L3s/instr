@@ -208,6 +208,7 @@ pub fn func_from_flat(
                 } => block_state.lower_set_bytes(dst, base, value, start),
                 flat_ir::Instr::Convert { dst, src } => block_state.lower_convert(dst, src),
                 flat_ir::Instr::Not { dst, src } => block_state.lower_not(dst, src),
+                flat_ir::Instr::Condition { .. } => todo!(),
                 flat_ir::Instr::Nop => {}
                 flat_ir::Instr::Memset { addr, value, count } => {
                     block_state.lower_memset(addr, value, count)
@@ -433,13 +434,14 @@ impl<'a> BlockState<'a> {
 
     fn lower_terminator(&mut self, terminator: &flat_ir::Terminator) {
         match terminator {
+            #[allow(unused)]
             flat_ir::Terminator::Cond {
                 addr: _,
                 cond,
                 then_bb,
                 else_bb,
             } => {
-                let cond = self.lower_condition(*cond);
+                let cond = self.lower_condition(todo!());
 
                 let thenb = self.lower_branch_target(then_bb);
                 let elseb = self.lower_branch_target(else_bb);
