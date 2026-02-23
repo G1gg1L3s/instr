@@ -290,7 +290,6 @@ impl Vars {
             Value::Reg(reg) => reg.size(),
             Value::Imm(imm) => imm.size(),
             Value::Temp(temp) => self.temp(temp).size,
-            Value::Flags(_) => Size::U1,
             Value::X87StatusWord => Size::U16,
             Value::X87ControlWord => Size::U16,
         }
@@ -417,7 +416,6 @@ pub enum Value {
     Reg(Reg),
     Imm(Imm),
     Temp(TempId),
-    Flags(Condition),
     X87StatusWord,
     X87ControlWord,
 }
@@ -428,7 +426,6 @@ impl std::fmt::Display for Value {
             Value::Reg(reg) => write!(f, "{reg}"),
             Value::Imm(x) => write!(f, "{x}"),
             Value::Temp(x) => write!(f, "{x}"),
-            Value::Flags(condition) => write!(f, "f:{condition}"),
             Value::X87StatusWord => write!(f, "__x87_status_word"),
             Value::X87ControlWord => write!(f, "__x87_control_word"),
         }
@@ -1995,15 +1992,36 @@ fn lower_leave(ctx: &mut LowerCtx, _ins: &iced_x86::Instruction) {
     });
 }
 
-fn lower_flag_as_int(ctx: &mut LowerCtx, flag: Flag, size: Size) -> Value {
-    let cond = flag.to_pos_condition();
+fn lower_adc(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    lower_bin_operation(ctx, ins, |ctx, _ins, lhs, rhs| {
+        let size = bin_size(ctx, lhs, rhs);
 
-    let tmp = ctx.new_temp(size);
-    ctx.emit(Instr::Convert {
-        dst: tmp,
-        src: Value::Flags(cond),
+        // CF as integer (0 or 1)
+        let cf_int = emit_condition(ctx, Flag::Cf.to_pos_condition());
+        let cf_int = emit_convert(ctx, cf_int, size);
+
+        // rhs + CF
+        let rhs_plus_cf = ctx.new_temp(size);
+        ctx.emit(Instr::BinOp {
+            op: BinOp::Add,
+            dst: Some(rhs_plus_cf),
+            lhs: rhs,
+            rhs: cf_int,
+            flags: FlagxGroup::NONE,
+        });
+
+        // lhs + (rhs + CF)
+        let res = ctx.new_temp(size);
+        ctx.emit(Instr::BinOp {
+            op: BinOp::Add,
+            dst: Some(res),
+            lhs,
+            rhs: rhs_plus_cf,
+            flags: FlagxGroup::ALL,
+        });
+
+        res
     });
-    tmp
 }
 
 fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
@@ -2011,7 +2029,8 @@ fn lower_sbb(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
         let size = bin_size(ctx, lhs, rhs);
 
         // CF as integer (0 or 1)
-        let cf_int = lower_flag_as_int(ctx, Flag::Cf, size);
+        let cf_int = emit_condition(ctx, Flag::Cf.to_pos_condition());
+        let cf_int = emit_convert(ctx, cf_int, size);
 
         // rhs + CF
         let rhs_plus_cf = ctx.new_temp(size);
@@ -2501,6 +2520,7 @@ fn lower_ins(
         Mnemonic::Jmp => return Some(lower_jmp(cfg_db, ctx, ins)),
 
         Mnemonic::Add => lower_bin_set_flags(ctx, ins, BinOp::Add),
+        Mnemonic::Adc => lower_adc(ctx, ins),
         Mnemonic::Sub => lower_bin_set_flags(ctx, ins, BinOp::Sub),
         Mnemonic::Sbb => lower_sbb(ctx, ins),
 

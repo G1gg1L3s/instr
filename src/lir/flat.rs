@@ -5,7 +5,7 @@ use crate::{
     flat_ir::{self, AnnotatedInstr, Flagx},
     lir::{
         block::BlockId,
-        flags::{Flag, Flags, FlagsGroup},
+        flags::{Flags, FlagsGroup},
         func::SsaFunction,
         ins::{
             BinOp, BranchTarget, CallTarget, Condition, JumpTableEntry, JumpTarget, MemSpace,
@@ -306,27 +306,6 @@ impl<'a> BlockState<'a> {
                 let var = self.get_var(FlatVar::Temp(temp_id));
                 self.state.builder.read_var(var)
             }
-            #[allow(unused)]
-            flat_ir::Value::Flags(cond) => {
-                let ssa_flag = flag_to_ssa(todo!());
-                let flags = self.get_flags_var(ssa_flag.to_flags());
-                let flags_val = self.state.builder.read_var(flags);
-                let ty = self.state.builder.func.val_ty(flags_val);
-                let Some(Ty::Flags(flags)) = ty else {
-                    log::warn!("invalid value {flags_val}: expected flags, found: {ty:?}");
-                    return self.ins().unimplemented();
-                };
-
-                if !flags.contains(ssa_flag.to_flags()) {
-                    panic!(
-                        "required flag: {}, but only provided: {:?}",
-                        ssa_flag,
-                        FlagsGroup::new(flags)
-                    );
-                }
-
-                self.ins().extract_flag(flags_val, ssa_flag)
-            }
             flat_ir::Value::X87StatusWord => {
                 let flags = self.get_flags_var(FlagsGroup::X87_COM.flags());
                 let flags_val = self.state.builder.read_var(flags);
@@ -354,7 +333,6 @@ impl<'a> BlockState<'a> {
             flat_ir::Value::Reg(reg) => FlatVar::Reg(reg),
             flat_ir::Value::Imm(_imm) => unreachable!(),
             flat_ir::Value::Temp(temp_id) => FlatVar::Temp(temp_id),
-            flat_ir::Value::Flags(_) => todo!(),
             flat_ir::Value::X87StatusWord => todo!(),
             flat_ir::Value::X87ControlWord => todo!(),
         };
@@ -565,7 +543,6 @@ impl<'a> BlockState<'a> {
                 let temp = self.flat_block.temp(temp_id);
                 size_to_ssa(temp.size)
             }
-            flat_ir::Value::Flags(_) => Ty::Bool,
             flat_ir::Value::X87StatusWord => todo!(),
             flat_ir::Value::X87ControlWord => todo!(),
         }
@@ -723,15 +700,6 @@ impl<'a> BlockState<'a> {
         if let Some((dst, val)) = dst.zip(val) {
             self.lower_write_val(dst, val);
         }
-    }
-}
-
-fn flag_to_ssa(flag: flat_ir::Flag) -> Flag {
-    match flag {
-        flat_ir::Flag::Cf => Flag::Carry,
-        flat_ir::Flag::Zf => Flag::Zero,
-        flat_ir::Flag::Sf => Flag::Sign,
-        flat_ir::Flag::Of => Flag::Overflow,
     }
 }
 
