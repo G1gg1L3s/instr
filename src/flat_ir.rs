@@ -1687,7 +1687,12 @@ fn lower_fcom(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
             let lhs = Value::Reg(Reg::St(0));
             (lhs, rhs)
         }
-        x => todo!("{x} operands"),
+        2 => {
+            let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+            let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
+            (lhs, rhs)
+        }
+        x => todo!("{x} operands: {ins} at {}", Addr(ins.ip32())),
     };
 
     emit_bin_with_flags(ctx, BinOp::Sub, lhs, rhs, FlagxGroup::X87_COM);
