@@ -554,6 +554,13 @@ pub enum Instr {
         condition: Condition,
     },
 
+    Select {
+        dst: Value,
+        cond: Value,
+        iftrue: Value,
+        iffalse: Value,
+    },
+
     SliceBytes {
         dst: Value,
         src: Value,
@@ -725,6 +732,12 @@ impl<'a> std::fmt::Display for InstrPrinter<'a> {
                 count,
                 size,
             } => write!(f, "__memcpy_{size}({dst_addr}, {src_addr}, {count})"),
+            Instr::Select {
+                dst,
+                cond,
+                iftrue,
+                iffalse,
+            } => write!(f, "{dst} = select {cond} ? {iftrue} : {iffalse}"),
             Instr::Unknown(i) => write!(f, "unknown ({i})"),
         }
     }
@@ -1619,6 +1632,29 @@ fn lower_funary(ctx: &mut LowerCtx, ins: &iced_x86::Instruction, op: UnOp, flags
         x => panic!("unkown operands {}: {} at {}", x, ins, Addr(ins.ip32())),
     }
 }
+
+fn lower_fcmov(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    assert_eq!(ins.op_count(), 2, "unknown operands: {}", ins);
+
+
+    let cond = match ins.mnemonic()  {
+        Mnemonic::Fcmovb => Flag::Cf.to_pos_condition(),
+        Mnemonic::Fcmovnb => Flag::Cf.to_neg_condition(),
+        _ => unreachable!()
+    };
+
+    let cond = emit_condition(ctx, cond);
+
+    let lhs = lower_operand(ctx, ins, 0).lower_load(ctx);
+    let rhs = lower_operand(ctx, ins, 1).lower_load(ctx);
+
+    // Okay to use lhs as dst because it's always st register
+    assert!(matches!(lhs, Value::Reg(Reg::St(_))));
+
+    ctx.emit(Instr::Select { dst: lhs, cond, iftrue: rhs, iffalse: lhs });
+
+}
+
 
 fn lower_fxch(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let (lhs, rhs) = match ins.op_count() {
@@ -2605,6 +2641,8 @@ fn lower_ins(
         Mnemonic::F2xm1 => lower_funary(ctx, ins, UnOp::F2xm1, FlagxGroup::X87_C1),
         Mnemonic::Fchs => lower_funary(ctx, ins, UnOp::Neg, FlagxGroup::X87_C1),
 
+        Mnemonic::Fcmovb | Mnemonic::Fcmovnb => lower_fcmov(ctx, ins),        
+
         Mnemonic::Stosb | Mnemonic::Stosw | Mnemonic::Stosd => lower_stos(ctx, ins),
         Mnemonic::Movsb | Mnemonic::Movsw | Mnemonic::Movsd => lower_movs(ctx, ins),
 
@@ -2617,7 +2655,7 @@ fn lower_ins(
 
         _ => {
             eprintln!("{}", ctx);
-            panic!("unknown instruction: {} at {}", ins, Addr(ins.ip32()))
+            panic!("unknown instruction: {} at {} ({} operands)", ins, Addr(ins.ip32()), ins.op_count())
         }
     }
     None
