@@ -227,6 +227,8 @@ pub fn func_from_flat(
                 }
                 flat_ir::Instr::Select { .. } => unimplemented!(),
                 flat_ir::Instr::UnOp { .. } => unimplemented!(),
+                flat_ir::Instr::WideDiv { .. } => unimplemented!(),
+                flat_ir::Instr::WideMul { .. } => unimplemented!(),
             }
         }
 

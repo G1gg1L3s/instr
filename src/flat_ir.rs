@@ -519,6 +519,20 @@ pub enum Instr {
         rhs: Value,
         flags: FlagxGroup,
     },
+    WideMul {
+        dst_left: Option<Value>,
+        dst_right: Value,
+        lhs: Value,
+        rhs: Value,
+        flags: FlagxGroup,
+    },
+    WideDiv {
+        quo: Value,
+        rem: Value,
+        divident_left: Option<Value>,
+        divident_right: Value,
+        divisor: Value,
+    },
     UnOp {
         op: UnOp,
         dst: Option<Value>,
@@ -645,6 +659,19 @@ impl<'a> std::fmt::Display for InstrPrinter<'a> {
                 } else {
                     write!(f, ", {flags} = {lhs} {op} {rhs}")
                 }
+            }
+            Instr::WideMul { dst_left, dst_right, lhs, rhs, flags } => {
+                if let Some(x) = dst_left {
+                    write!(f, "{x}:")?;
+                }
+                write!(f, "{dst_right}, {flags} = {lhs} * {rhs}")
+            }
+            Instr::WideDiv { quo, rem, divident_left, divident_right, divisor } => {
+                write!(f, "{quo}, {rem} = ")?;
+                if let Some(x) = divident_left {
+                    write!(f, "{x}:")?;
+                }
+                write!(f, "{divident_right} / {divisor}")
             }
             Instr::UnOp {
                 op,
@@ -1326,82 +1353,92 @@ fn lower_mul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let rhs = rhs_op.lower_load(ctx);
     let size = ctx.size(rhs);
 
-    let (eax_op, edx_op) = match size {
-        Size::U8 => (
-            Operand::SubReg {
-                reg: Reg::Eax,
-                lo: 0,
-                size: Size::U8,
-            },
-            Operand::SubReg {
-                reg: Reg::Edx,
-                lo: 0,
-                size: Size::U8,
-            },
-        ),
-        Size::U16 => (
-            Operand::SubReg {
-                reg: Reg::Eax,
-                lo: 0,
-                size: Size::U16,
-            },
-            Operand::SubReg {
-                reg: Reg::Edx,
-                lo: 0,
-                size: Size::U16,
-            },
-        ),
-        Size::U32 => (Operand::Reg(Reg::Eax), Operand::Reg(Reg::Edx)),
-        _ => unreachable!(),
-    };
+    match size {
+        Size::U8 => {
+            let ax = ax();
+            let al = al();
 
-    let lhs = eax_op.lower_load(ctx);
-    let wide = match size {
-        Size::U8 => Size::U16,
-        Size::U16 => Size::U32,
-        Size::U32 => Size::U64,
-        _ => unreachable!(),
-    };
-    let lhs_wide = emit_convert(ctx, lhs, wide);
-    let rhs_wide = emit_convert(ctx, rhs, wide);
+            let al_val = al.lower_load(ctx);
+            let res = ctx.new_temp(Size::U16);
+            ctx.emit(Instr::WideMul { dst_left: None, dst_right: res, lhs: al_val, rhs, flags: FlagxGroup::CARRY_OVERFOW });
+            ax.lower_store(ctx, res);
+        }
+        Size::U16 => {
+            let dx = dx();
+            let ax = ax();
 
-    let full = emit_bin_with_flags(
-        ctx,
-        BinOp::Mulu,
-        lhs_wide,
-        rhs_wide,
-        FlagxGroup::CARRY_OVERFOW,
-    );
+            let ax_val = ax.lower_load(ctx);
+            let dst_left = ctx.new_temp(Size::U16);
+            let dst_right = ctx.new_temp(Size::U16);
+            ctx.emit(Instr::WideMul { dst_left: Some(dst_left), dst_right, lhs: ax_val, rhs, flags: FlagxGroup::CARRY_OVERFOW });
+            dx.lower_store(ctx, dst_left);
+            ax.lower_store(ctx, dst_right);
+        }
 
-    // Low / high parts
-    let low = ctx.new_temp(size);
-    ctx.emit(Instr::SliceBytes {
-        dst: low,
-        src: full,
-        start: 0,
-    });
+        Size::U32 => {
+            let edx = Value::Reg(Reg::Edx);
+            let eax = Value::Reg(Reg::Eax);
 
-    let high = ctx.new_temp(size);
-    ctx.emit(Instr::SliceBytes {
-        dst: high,
-        src: full,
-        start: size.to_bytes().unwrap() as u8,
-    });
+            let dst_left = edx;
+            let dst_right = eax;
+            ctx.emit(Instr::WideMul { dst_left: Some(dst_left), dst_right, lhs: eax, rhs, flags: FlagxGroup::CARRY_OVERFOW });
+        }
+        _ => unreachable!()
+    }
+}
+
+fn ax() -> Operand {
+    Operand::SubReg { reg: Reg::Eax, lo: 0, size: Size::U16 }
+}
+
+fn al() -> Operand {
+    Operand::SubReg { reg: Reg::Eax, lo: 0, size: Size::U8 }
+}
+
+fn ah() -> Operand {
+    Operand::SubReg { reg: Reg::Eax, lo: 1, size: Size::U8 }
+}
+
+fn dx() -> Operand {
+    Operand::SubReg { reg: Reg::Edx, lo: 0, size: Size::U16 }
+}
+
+fn lower_div(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
+    let rhs_op = lower_operand(ctx, ins, 0);
+    let rhs = rhs_op.lower_load(ctx);
+    let size = ctx.size(rhs);
 
     match size {
         Size::U8 => {
-            // AX := AL ∗ SRC;
-            eax_op.lower_store(ctx, low);
+            let ax_val = ax().lower_load(ctx);
+            let quo = ctx.new_temp(Size::U8);
+            let rem = ctx.new_temp(Size::U8);
+            ctx.emit(Instr::WideDiv { quo, rem, divident_left: None, divident_right: ax_val, divisor: rhs });
+            al().lower_store(ctx, quo);
+            ah().lower_store(ctx, rem);
         }
-        Size::U32 | Size::U16 => {
-            // DX:AX := AX ∗ SRC;
-            // EDX:EAX := EAX ∗ SRC
-            edx_op.lower_store(ctx, high);
-            eax_op.lower_store(ctx, low);
+        Size::U16 => {
+            let dx_val = dx().lower_load(ctx);
+            let ax_val = ax().lower_load(ctx);
+            let quo = ctx.new_temp(Size::U16);
+            let rem = ctx.new_temp(Size::U16);
+            ctx.emit(Instr::WideDiv { quo, rem, divident_left: Some(dx_val), divident_right: ax_val, divisor: rhs });
+            ax().lower_store(ctx, quo);
+            dx().lower_store(ctx, rem);
         }
-        _ => unreachable!(),
+        Size::U32 => {
+            let edx = Value::Reg(Reg::Edx);
+            let eax = Value::Reg(Reg::Eax);
+
+            let quo = eax;
+            let rem = edx;
+            ctx.emit(Instr::WideDiv { quo, rem, divident_left: Some(edx), divident_right: eax, divisor: rhs });
+        }
+        _ => unreachable!()
     }
+
 }
+
 
 fn lower_imul(ctx: &mut LowerCtx, ins: &iced_x86::Instruction) {
     let (dst, lhs, rhs) = match ins.op_count() {
@@ -2583,6 +2620,8 @@ fn lower_ins(
 
         Mnemonic::Mul => lower_mul(ctx, ins),
         Mnemonic::Imul => lower_imul(ctx, ins),
+
+        Mnemonic::Div => lower_div(ctx, ins),
 
         Mnemonic::Shl => lower_shift(ctx, ins, BinOp::ShiftLeft),
         Mnemonic::Shr => lower_shift(ctx, ins, BinOp::ShifRight),
