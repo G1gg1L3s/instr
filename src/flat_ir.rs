@@ -1131,7 +1131,7 @@ fn lower_subregister(reg: iced_x86::Register) -> Option<Operand> {
         },
         Register::AX => Operand::SubReg {
             reg: Reg::Eax,
-            lo: 8,
+            lo: 0,
             size: Size::U16,
         },
 
@@ -1147,7 +1147,7 @@ fn lower_subregister(reg: iced_x86::Register) -> Option<Operand> {
         },
         Register::BX => Operand::SubReg {
             reg: Reg::Ebx,
-            lo: 8,
+            lo: 0,
             size: Size::U16,
         },
 
@@ -1163,7 +1163,7 @@ fn lower_subregister(reg: iced_x86::Register) -> Option<Operand> {
         },
         Register::CX => Operand::SubReg {
             reg: Reg::Ecx,
-            lo: 8,
+            lo: 0,
             size: Size::U16,
         },
 
@@ -1179,12 +1179,18 @@ fn lower_subregister(reg: iced_x86::Register) -> Option<Operand> {
         },
         Register::DX => Operand::SubReg {
             reg: Reg::Edx,
-            lo: 8,
+            lo: 0,
             size: Size::U16,
         },
 
         Register::BP => Operand::SubReg {
             reg: Reg::Ebp,
+            lo: 0,
+            size: Size::U16,
+        },
+
+        Register::DI => Operand::SubReg {
+            reg: Reg::Edi,
             lo: 0,
             size: Size::U16,
         },
